@@ -628,7 +628,11 @@ function renderDetailModal(p, isEditor){
   const husbandName = p.husbandName || "";
   const wifeName = p.wifeName || "";
   const spouseName = p.spouseName || ""; // legacy field, shown if present on old entries
-  const parent = p.parentId ? state.people[p.parentId] : null;
+  let topAncestor = null;
+  { let cur = p, guard = 0;
+    while (cur.parentId && state.people[cur.parentId] && guard < 100){ cur = state.people[cur.parentId]; guard++; }
+    if (cur.id !== p.id) topAncestor = cur;
+  }
   const photos = Array.isArray(p.photos) ? p.photos : (p.photo ? [p.photo] : []);
   let html = '<div class="overlay" id="detailOverlay"><div class="modal" onclick="event.stopPropagation()">'
     + '<button class="modal-close" id="closeDetailBtn">✕</button>'
@@ -641,15 +645,15 @@ function renderDetailModal(p, isEditor){
     html += '</div>';
   }
   html += '<div class="detail-name">'+esc(p.name)+'</div>'
-    + '<div class="detail-meta">'+esc(p.birthYear||'غير معروف')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div>'
+    + '<div class="detail-meta">'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div>'
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
     + '<div class="detail-rel">'
-    + (parent ? '<div>الأب/الأم: <b>'+esc(parent.name)+'</b></div>' : '')
+    + (topAncestor ? '<div>الجد الأكبر: <b>'+esc(topAncestor.name)+'</b></div>' : '')
     + (motherName ? '<div>الأم: <b>'+esc(motherName)+'</b></div>' : '')
     + (husbandName ? '<div>❤ الزوج: <b>'+esc(husbandName)+'</b></div>' : '')
     + (wifeName ? '<div>❤ الزوجة: <b>'+esc(wifeName)+'</b></div>' : '')
     + (spouseName ? '<div>❤ الزوج/الزوجة: <b>'+esc(spouseName)+'</b></div>' : '')
-    + (children.length ? '<div>الأبناء: <b>'+children.map(c=>esc(c.name)).join('، ')+'</b></div>' : '')
+    + (children.length ? '<div>الأولاد: <b>'+children.map(c=>esc(c.name)).join('، ')+'</b></div>' : '')
     + '</div>';
   if (isEditor){
     html += '<div class="modal-actions">'
