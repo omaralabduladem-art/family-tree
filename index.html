@@ -19,7 +19,7 @@
   --gold:#C9A15A; --gold-light:#E9CD8C; --cream:#F2EBDA; --cream-dim:#C9C0AC;
   --male:#7FA6C4; --female:#C98CA0; --danger:#C4685F;
 }
-body{margin:0;font-family:'Tajawal',sans-serif;background:radial-gradient(ellipse at 50% -10%, var(--bg-2), var(--bg) 60%);color:var(--cream);overflow-x:hidden;}
+body{margin:0;font-family:'Tajawal',sans-serif;background:radial-gradient(ellipse at 50% -10%, var(--bg-2), var(--bg) 60%);color:var(--cream);overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
 .ft-login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 .ft-login-card{background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:18px;padding:32px 26px;width:100%;max-width:360px;text-align:center;}
@@ -53,7 +53,7 @@ h1{font-family:'Amiri',serif;font-size:30px;font-weight:700;color:var(--gold-lig
 .legend button:hover{border-color:var(--gold);color:var(--gold-light);}
 #canvasWrap{position:relative;flex:1;min-height:0;overflow:auto;touch-action:none;}
 #canvas{position:relative;transform-origin:top right;}
-.node{position:absolute;width:130px;text-align:center;cursor:pointer;background:rgba(23,82,67,0.55);border:1.5px solid var(--male);border-radius:16px;padding:9px 16px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
+.node{position:absolute;width:105px;text-align:center;cursor:pointer;background:rgba(23,82,67,0.55);border:1.5px solid var(--male);border-radius:14px;padding:8px 10px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
 .node.female{border-color:var(--female);}
 .node.deceased{border-color:#8A8A8A;background:rgba(90,90,90,0.35);}
 .node.deceased .name{color:#D6D6D6;}
@@ -114,7 +114,7 @@ function forgetSession(){
 function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
-const ROW_HEIGHT = 110, COL_WIDTH = 150, NODE_W = 130, NODE_H = 52;
+const ROW_HEIGHT = 110, COL_WIDTH = 118, NODE_W = 105, NODE_H = 52;
 
 // ---------- Firebase REST helpers ----------
 async function fbGet(path){ const r = await fetch(DB_URL+"/"+path+".json"); if(!r.ok) throw new Error("fb GET "+r.status); return r.json(); }
@@ -194,6 +194,7 @@ const state = {
   session: null, // {role, cryptoKey}
   people: {},
   search: "",
+  highlightGen: null,
   zoom: 1,
   detailId: null,
   editId: null,
@@ -593,7 +594,7 @@ function renderApp(){
     for (let g=1; g<=layout.maxGen; g++) html += '<div class="genlabel" style="top:'+(pxY(g)-30)+'px;">'+esc(genLabel(g))+'</div>';
     Object.values(state.people).forEach(p=>{
       const pos = layout.positions[p.id]; if (!pos) return;
-      const match = state.search.trim() && p.name && p.name.includes(state.search.trim());
+      const match = (state.search.trim() && p.name && p.name.includes(state.search.trim())) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deathYear && String(p.deathYear).trim();
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.gen)+'px;right:'+pxX(pos.x)+'px;">'
         + '<div class="name">'+esc(p.name)+'</div><div class="years">'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div></div>';
@@ -818,14 +819,27 @@ function wireAppEvents(layout){
   if (searchInput) searchInput.oninput = e => {
     const cursorPos = e.target.selectionStart;
     state.search = e.target.value;
+    state.highlightGen = null;
     renderApp();
     const newInput = document.getElementById("searchInput");
     if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
+    const term = state.search.trim();
+    if (term){
+      const searchLayout = computeLayout(state.people);
+      const matches = Object.values(state.people).filter(p => p.name && p.name.includes(term));
+      if (matches.length){
+        matches.sort((a,b) => (searchLayout.positions[a.id]?.gen||1) - (searchLayout.positions[b.id]?.gen||1));
+        scrollToPerson(matches[0].id);
+      }
+    }
   };
   document.getElementById("logoutBtn").onclick = () => { if(pollTimer) clearInterval(pollTimer); forgetSession(); state.session=null; state.mode="login"; state.people={}; render(); };
   document.getElementById("syncNowBtn").onclick = () => loadPeople();
   document.querySelectorAll(".legend button").forEach(b => b.onclick = () => {
     const g = parseInt(b.dataset.gen);
+    state.search = "";
+    state.highlightGen = g;
+    renderApp();
     document.getElementById("canvasWrap").scrollTo({left:0, top: pxY(g)*state.zoom-100, behavior:"smooth"});
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
@@ -983,7 +997,7 @@ function wireAppEvents(layout){
     const dist = (a,b) => Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
     wrap.addEventListener("touchstart", e => {
       if (e.touches.length===2){ pinch={active:true,startDist:dist(e.touches[0],e.touches[1]),startZoom:state.zoom}; pan.active=false; }
-      else if (e.touches.length===1){ pan={active:true,lastX:e.touches[0].clientX,lastY:e.touches[0].clientY}; }
+      else if (e.touches.length===1 && !e.target.closest(".node")){ pan={active:true,lastX:e.touches[0].clientX,lastY:e.touches[0].clientY}; }
     });
     wrap.addEventListener("touchmove", e => {
       if (e.touches.length===2 && pinch.active){
