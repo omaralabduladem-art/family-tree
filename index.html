@@ -596,7 +596,7 @@ function renderApp(){
       const match = state.search.trim() && p.name && p.name.includes(state.search.trim());
       const isDeceased = p.deathYear && String(p.deathYear).trim();
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.gen)+'px;right:'+pxX(pos.x)+'px;">'
-        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+esc(p.birthYear||'؟')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div></div>';
+        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div></div>';
     });
     html += '</div></div>';
   }
