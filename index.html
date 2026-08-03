@@ -232,7 +232,6 @@ window.addEventListener("mouseup", () => {
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 // ---------- Layout ----------
-const MAX_ROW_SPAN = 4.2; // a generation wraps to a new row once its groups span this many columns
 function computeLayout(people){
   const list = Object.values(people);
   const childrenMap = {};
@@ -241,7 +240,7 @@ function computeLayout(people){
   roots.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0));
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0)));
 
-  // Pass 1: raw x positions — true siblings packed close, different branches spaced a bit wider.
+  // Siblings (same parent) are packed close together; different branches get a bit more air.
   const xPos = {}; let cursor = 0; let lastParentId = undefined; const visited = new Set();
   function assignX(id, parentId){
     if (visited.has(id)) return xPos[id];
@@ -258,43 +257,12 @@ function computeLayout(people){
   list.forEach(p=>{ if(!visited.has(p.id)) assignX(p.id, p.parentId||null); });
 
   const maxGen = Math.max(1, ...list.map(p=>p.gen||1));
-  const byGen = {};
-  list.forEach(p=>{ const g=Math.max(p.gen||1,1); (byGen[g]=byGen[g]||[]).push(p.id); });
-
-  // Pass 2: wrap wide generations into extra rows, moving one *complete* sibling group
-  // at a time — a parent's children always stay together, so every connector line
-  // still points straight at its own family cluster.
   const positions = {};
-  const genRowStart = {};
-  let rowCursor = 0;
-  for (let g=1; g<=maxGen; g++){
-    genRowStart[g] = rowCursor;
-    const ids = (byGen[g]||[]).slice().sort((a,b)=>xPos[a]-xPos[b]);
-    const groups = [];
-    ids.forEach(id=>{
-      const pid = people[id].parentId || null;
-      const lastGroup = groups[groups.length-1];
-      if (lastGroup && lastGroup.parentId === pid) lastGroup.ids.push(id);
-      else groups.push({parentId: pid, ids: [id]});
-    });
-    const rowsOfGroups = []; let currentRow = []; let rowMinX = null;
-    groups.forEach(grp=>{
-      const gMin = Math.min(...grp.ids.map(id=>xPos[id]));
-      const gMax = Math.max(...grp.ids.map(id=>xPos[id]));
-      if (rowMinX !== null && (gMax - rowMinX) > MAX_ROW_SPAN){
-        rowsOfGroups.push(currentRow); currentRow = []; rowMinX = null;
-      }
-      if (rowMinX === null) rowMinX = gMin;
-      currentRow.push(grp);
-    });
-    if (currentRow.length) rowsOfGroups.push(currentRow);
-    rowsOfGroups.forEach((rowGroups, r)=>{
-      const allIds = rowGroups.flatMap(gr=>gr.ids);
-      const baseX = Math.min(...allIds.map(id=>xPos[id]));
-      allIds.forEach(id=>{ positions[id] = {x: xPos[id]-baseX, row: rowCursor+r, gen: g}; });
-    });
-    rowCursor += Math.max(1, rowsOfGroups.length);
-  }
+  list.forEach(p=>{ const g=Math.max(p.gen||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
+  const width = (cursor+2)*COL_WIDTH + 220;
+  const height = maxGen*ROW_HEIGHT + 140;
+  const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
+  return {positions, width, height, maxGen, genRowStart};
 
   const maxX = Math.max(1, ...Object.values(positions).map(p=>p.x));
   const width = (maxX+2)*COL_WIDTH + 220;
