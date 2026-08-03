@@ -61,7 +61,7 @@ h1{font-family:'Amiri',serif;font-size:30px;font-weight:700;color:var(--gold-lig
 .node.match{border-color:var(--gold-light);box-shadow:0 0 14px 2px var(--gold-light);}
 .node .name{font-size:13.5px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .node .years{font-size:11px;color:var(--cream-dim);margin-top:2px;}
-.genlabel{position:absolute;font-size:11px;color:var(--cream-dim);opacity:.7;right:10px;}
+.genlabel{position:absolute;font-size:12.5px;font-weight:600;color:var(--gold-light);opacity:.9;right:10px;text-shadow:0 1px 3px rgba(0,0,0,0.6);}
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--cream-dim);}
 .zoom{position:fixed;left:16px;bottom:16px;display:flex;flex-direction:column;gap:6px;z-index:20;}
 .zoom button{width:38px;height:38px;border-radius:50%;background:var(--panel-2);border:1px solid rgba(201,161,90,0.4);color:var(--gold-light);cursor:pointer;font-size:18px;}
@@ -232,7 +232,6 @@ window.addEventListener("mouseup", () => {
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 // ---------- Layout ----------
-const MAX_COLS_PER_ROW = 4; // generations wider than this wrap into extra rows instead of stretching sideways
 function computeLayout(people){
   const list = Object.values(people);
   const childrenMap = {};
@@ -240,42 +239,23 @@ function computeLayout(people){
   const roots = list.filter(p=>!p.parentId || !people[p.parentId]).map(p=>p.id);
   roots.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0));
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0)));
-  // Family-clustering order: a DFS leaf-index keeps siblings/cousins grouped together,
-  // we reuse it only as a *sort key* within each generation (not as an absolute X anymore).
-  const orderKey = {}; let leaf = 0; const visited = new Set();
-  function assignOrder(id){
-    if (visited.has(id)) return orderKey[id];
+  const xPos = {}; let leaf = 0; const visited = new Set();
+  function assignX(id){
+    if (visited.has(id)) return xPos[id];
     visited.add(id);
     const kids = childrenMap[id]||[];
-    if (kids.length===0){ orderKey[id]=leaf; leaf+=1; }
-    else { kids.forEach(assignOrder); const xs=kids.map(k=>orderKey[k]); orderKey[id]=(Math.min(...xs)+Math.max(...xs))/2; }
-    return orderKey[id];
+    if (kids.length===0){ xPos[id]=leaf; leaf+=1; }
+    else { kids.forEach(assignX); const xs=kids.map(k=>xPos[k]); xPos[id]=(Math.min(...xs)+Math.max(...xs))/2; }
+    return xPos[id];
   }
-  roots.forEach(assignOrder);
-  list.forEach(p=>{ if(!visited.has(p.id)) assignOrder(p.id); });
-
+  roots.forEach(assignX);
+  list.forEach(p=>{ if(!visited.has(p.id)) assignX(p.id); });
   const maxGen = Math.max(1, ...list.map(p=>p.gen||1));
-  const byGen = {};
-  list.forEach(p=>{ const g=Math.max(p.gen||1,1); (byGen[g]=byGen[g]||[]).push(p.id); });
-
   const positions = {};
-  const genRowStart = {};
-  let rowCursor = 0;
-  for (let g=1; g<=maxGen; g++){
-    genRowStart[g] = rowCursor;
-    const ids = (byGen[g]||[]).sort((a,b)=>orderKey[a]-orderKey[b]);
-    const rowsNeeded = Math.max(1, Math.ceil(ids.length / MAX_COLS_PER_ROW));
-    // Center each wrapped sub-row instead of packing it flush to one side,
-    // so a short leftover row (e.g. 2 people out of a max of 4) doesn't leave a lopsided gap.
-    for (let r=0; r<rowsNeeded; r++){
-      const rowIds = ids.slice(r*MAX_COLS_PER_ROW, r*MAX_COLS_PER_ROW+MAX_COLS_PER_ROW);
-      const offset = Math.floor((MAX_COLS_PER_ROW - rowIds.length) / 2);
-      rowIds.forEach((id,i)=>{ positions[id] = {x: offset+i, row: rowCursor+r, gen: g}; });
-    }
-    rowCursor += rowsNeeded;
-  }
-  const width = MAX_COLS_PER_ROW*COL_WIDTH + 220;
-  const height = rowCursor*ROW_HEIGHT + 140;
+  list.forEach(p=>{ const g=Math.max(p.gen||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
+  const width = (leaf+1)*COL_WIDTH + 220;
+  const height = maxGen*ROW_HEIGHT + 140;
+  const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
   return {positions, width, height, maxGen, genRowStart};
 }
 const pxX = x => 80 + x*COL_WIDTH;
