@@ -215,6 +215,7 @@ const state = {
 
 const app = document.getElementById("app");
 let pollTimer = null;
+let gestureActive = false; // true while the user is actively dragging/pinching the tree
 let globalMouseDrag = {active:false, lastX:0, lastY:0, wrap:null};
 window.addEventListener("mousemove", e => {
   if (!globalMouseDrag.active || !globalMouseDrag.wrap) return;
@@ -225,12 +226,13 @@ window.addEventListener("mousemove", e => {
 window.addEventListener("mouseup", () => {
   if (globalMouseDrag.wrap) globalMouseDrag.wrap.style.cursor = "grab";
   globalMouseDrag.active = false;
+  gestureActive = false;
 });
 
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 // ---------- Layout ----------
-const MAX_COLS_PER_ROW = 6; // generations wider than this wrap into extra rows instead of stretching sideways
+const MAX_COLS_PER_ROW = 4; // generations wider than this wrap into extra rows instead of stretching sideways
 function computeLayout(people){
   const list = Object.values(people);
   const childrenMap = {};
@@ -262,10 +264,14 @@ function computeLayout(people){
   for (let g=1; g<=maxGen; g++){
     genRowStart[g] = rowCursor;
     const ids = (byGen[g]||[]).sort((a,b)=>orderKey[a]-orderKey[b]);
-    ids.forEach((id,i)=>{
-      positions[id] = {x: i % MAX_COLS_PER_ROW, row: rowCursor + Math.floor(i / MAX_COLS_PER_ROW), gen: g};
-    });
     const rowsNeeded = Math.max(1, Math.ceil(ids.length / MAX_COLS_PER_ROW));
+    // Center each wrapped sub-row instead of packing it flush to one side,
+    // so a short leftover row (e.g. 2 people out of a max of 4) doesn't leave a lopsided gap.
+    for (let r=0; r<rowsNeeded; r++){
+      const rowIds = ids.slice(r*MAX_COLS_PER_ROW, r*MAX_COLS_PER_ROW+MAX_COLS_PER_ROW);
+      const offset = Math.floor((MAX_COLS_PER_ROW - rowIds.length) / 2);
+      rowIds.forEach((id,i)=>{ positions[id] = {x: offset+i, row: rowCursor+r, gen: g}; });
+    }
     rowCursor += rowsNeeded;
   }
   const width = MAX_COLS_PER_ROW*COL_WIDTH + 220;
@@ -560,7 +566,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName) loadPeople();
+    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !gestureActive) loadPeople();
   }, 7000);
 }
 
@@ -1030,6 +1036,7 @@ function wireAppEvents(layout){
     const dist = (a,b) => Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
     const mid = (a,b) => ({x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2});
     wrap.addEventListener("touchstart", e => {
+      gestureActive = true;
       if (e.touches.length===2){
         const wrapRect = wrap.getBoundingClientRect();
         const m = mid(e.touches[0],e.touches[1]);
@@ -1051,10 +1058,13 @@ function wireAppEvents(layout){
         const contentY = (wrap.scrollTop + pinch.midY) / oldZoom;
         state.zoom = newZoom;
         const canvasEl = document.getElementById("canvas");
+        const sizerEl = document.getElementById("canvasSizer");
         if (canvasEl) canvasEl.style.transform = "scale("+newZoom+")";
+        if (sizerEl){ sizerEl.style.width = (layout.width*newZoom)+"px"; sizerEl.style.height = (layout.height*newZoom)+"px"; }
         wrap.scrollLeft = contentX*newZoom - pinch.midX;
         wrap.scrollTop = contentY*newZoom - pinch.midY;
       } else if (e.touches.length===1 && pan.active){
+        e.preventDefault();
         const dx = e.touches[0].clientX-pan.lastX, dy = e.touches[0].clientY-pan.lastY;
         wrap.scrollLeft -= dx; wrap.scrollTop -= dy;
         pan.lastX=e.touches[0].clientX; pan.lastY=e.touches[0].clientY;
@@ -1064,7 +1074,7 @@ function wireAppEvents(layout){
     wrap.addEventListener("touchend", e => {
       if (pan.active && pan.moved) { suppressClick = true; setTimeout(()=>{suppressClick=false;}, 300); }
       if(e.touches.length<2 && pinch.active){ pinch.active=false; renderApp(); }
-      if(e.touches.length<1) pan.active=false;
+      if(e.touches.length<1){ pan.active=false; gestureActive=false; }
     });
     wrap.addEventListener("click", e => {
       if (suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
@@ -1079,6 +1089,7 @@ function wireAppEvents(layout){
     }, {passive:false});
     wrap.addEventListener("mousedown", e => {
       if (e.target.closest(".node")) return;
+      gestureActive = true;
       globalMouseDrag = {active:true, lastX:e.clientX, lastY:e.clientY, wrap};
       wrap.style.cursor = "grabbing";
     });
