@@ -53,7 +53,7 @@ h1{font-family:'Amiri',serif;font-size:30px;font-weight:700;color:var(--gold-lig
 .legend button:hover{border-color:var(--gold);color:var(--gold-light);}
 #canvasWrap{position:relative;flex:1;min-height:0;overflow:auto;touch-action:none;}
 #canvas{position:relative;transform-origin:top right;}
-.node{position:absolute;width:105px;text-align:center;cursor:pointer;background:rgba(23,82,67,0.55);border:1.5px solid var(--male);border-radius:14px;padding:8px 10px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
+.node{position:absolute;width:90px;text-align:center;cursor:pointer;background:rgba(23,82,67,0.55);border:1.5px solid var(--male);border-radius:12px;padding:7px 6px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
 .node.female{border-color:var(--female);}
 .node.deceased{border-color:#8A8A8A;background:rgba(90,90,90,0.35);}
 .node.deceased .name{color:#D6D6D6;}
@@ -115,7 +115,7 @@ function forgetSession(){
 function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
-const ROW_HEIGHT = 110, COL_WIDTH = 118, NODE_W = 105, NODE_H = 52;
+const ROW_HEIGHT = 110, COL_WIDTH = 105, NODE_W = 90, NODE_H = 52;
 
 // ---------- Firebase REST helpers ----------
 async function fbGet(path){ const r = await fetch(DB_URL+"/"+path+".json"); if(!r.ok) throw new Error("fb GET "+r.status); return r.json(); }
@@ -248,7 +248,7 @@ function computeLayout(people){
     visited.add(id);
     const kids = childrenMap[id]||[];
     if (kids.length===0){
-      if (lastParentId !== undefined) cursor += (parentId===lastParentId ? 0.62 : 1.15);
+      if (lastParentId !== undefined) cursor += (parentId===lastParentId ? 0.95 : 1.3);
       xPos[id]=cursor; lastParentId = parentId;
     }
     else { kids.forEach(k=>assignX(k,id)); const xs=kids.map(k=>xPos[k]); xPos[id]=(Math.min(...xs)+Math.max(...xs))/2; }
