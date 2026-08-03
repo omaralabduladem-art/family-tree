@@ -239,21 +239,24 @@ function computeLayout(people){
   const roots = list.filter(p=>!p.parentId || !people[p.parentId]).map(p=>p.id);
   roots.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0));
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0)));
-  const xPos = {}; let leaf = 0; const visited = new Set();
-  function assignX(id){
+  const xPos = {}; let cursor = 0; let lastParentId = undefined; const visited = new Set();
+  function assignX(id, parentId){
     if (visited.has(id)) return xPos[id];
     visited.add(id);
     const kids = childrenMap[id]||[];
-    if (kids.length===0){ xPos[id]=leaf; leaf+=1; }
-    else { kids.forEach(assignX); const xs=kids.map(k=>xPos[k]); xPos[id]=(Math.min(...xs)+Math.max(...xs))/2; }
+    if (kids.length===0){
+      if (lastParentId !== undefined) cursor += (parentId===lastParentId ? 0.62 : 1.15);
+      xPos[id]=cursor; lastParentId = parentId;
+    }
+    else { kids.forEach(k=>assignX(k,id)); const xs=kids.map(k=>xPos[k]); xPos[id]=(Math.min(...xs)+Math.max(...xs))/2; }
     return xPos[id];
   }
-  roots.forEach(assignX);
-  list.forEach(p=>{ if(!visited.has(p.id)) assignX(p.id); });
+  roots.forEach(id=>assignX(id, null));
+  list.forEach(p=>{ if(!visited.has(p.id)) assignX(p.id, p.parentId||null); });
   const maxGen = Math.max(1, ...list.map(p=>p.gen||1));
   const positions = {};
   list.forEach(p=>{ const g=Math.max(p.gen||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
-  const width = (leaf+1)*COL_WIDTH + 220;
+  const width = (cursor+2)*COL_WIDTH + 220;
   const height = maxGen*ROW_HEIGHT + 140;
   const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
   return {positions, width, height, maxGen, genRowStart};
