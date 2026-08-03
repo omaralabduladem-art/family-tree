@@ -607,7 +607,7 @@ function renderApp(){
       const match = (state.search.trim() && p.name && p.name.includes(state.search.trim())) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deathYear && String(p.deathYear).trim();
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
-        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div></div>';
+        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'\u2069'+'</div></div>';
     });
     html += '</div></div>';
   }
@@ -659,7 +659,7 @@ function renderDetailModal(p, isEditor){
     html += '</div>';
   }
   html += '<div class="detail-name">'+esc(p.name)+'</div>'
-    + '<div class="detail-meta">'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'</div>'
+    + '<div class="detail-meta">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'\u2069'+'</div>'
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
     + '<div class="detail-rel">'
     + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
