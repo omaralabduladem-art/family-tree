@@ -263,11 +263,6 @@ function computeLayout(people){
   const height = maxGen*ROW_HEIGHT + 140;
   const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
   return {positions, width, height, maxGen, genRowStart};
-
-  const maxX = Math.max(1, ...Object.values(positions).map(p=>p.x));
-  const width = (maxX+2)*COL_WIDTH + 220;
-  const height = rowCursor*ROW_HEIGHT + 140;
-  return {positions, width, height, maxGen, genRowStart};
 }
 const pxX = x => 80 + x*COL_WIDTH;
 const pxY = row => 60 + row*ROW_HEIGHT;
