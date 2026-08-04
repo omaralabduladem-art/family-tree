@@ -310,6 +310,7 @@ async function loadPeople(){
     } else {
       state.familyName = meta.familyName || "";
     }
+    if (state.familyName) document.title = "شجرة عائلة "+state.familyName;
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -346,6 +347,8 @@ function render(){
 
 function renderLogin(){
   let html = '<div class="ft-login-wrap"><div class="ft-login-card">';
+  const treeTag = TREE_ID ? '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">🌳 الشجرة: '+esc(TREE_ID)+'</div>' : '';
+  html += treeTag;
   const loginTitle = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
   if (state.mode === "checking"){
     html += '<div class="spin" style="font-size:24px;">⏳</div>';
@@ -564,8 +567,8 @@ function renderApp(){
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
   const titleText = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
-  html += '<header><h1>'+titleText+'</h1><div class="sub">'
-    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : '')
+  html += '<header><h1>'+titleText+(TREE_ID?' <span style="font-size:14px;color:var(--cream-dim);">('+esc(TREE_ID)+')</span>':'')+'</h1><div class="sub">'
+    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : 'ابدأ ببناء شجرة عائلتك')
     + (state.syncing ? ' <span class="spin">⏳</span>' : '')
     + '</div>'
     + '<div class="userbar"><span class="role-badge">'+(isAdmin?'👑 مسؤول أول':(isEditor?'✏️ محرِّر':'👁️ مشاهد فقط'))+'</span>'
@@ -862,11 +865,7 @@ function wireAppEvents(layout){
     state.search = "";
     state.highlightGen = g;
     renderApp();
-    const idsInGen = Object.keys(layout.positions).filter(id => layout.positions[id].gen === g);
-    if (idsInGen.length){
-      idsInGen.sort((a,b2) => layout.positions[a].x - layout.positions[b2].x);
-      scrollToPerson(idsInGen[Math.floor(idsInGen.length/2)]);
-    }
+    document.getElementById("canvasWrap").scrollTo({left:0, top: pxY(layout.genRowStart[g])*state.zoom-100, behavior:"smooth"});
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
   if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
@@ -891,6 +890,7 @@ function wireAppEvents(layout){
         const cleanMeta = {...meta}; delete cleanMeta.familyName;
         await saveMeta({...cleanMeta, familyNameEnc});
         state.familyName = name;
+        if (name) document.title = "شجرة عائلة "+name;
         state.showFamilyName = false;
       } catch(e){ state.err = "تعذّر حفظ اسم العائلة."; }
       state.busy = false; render();
@@ -1104,7 +1104,7 @@ function wireAppEvents(layout){
 // ---------- Boot ----------
 (async function boot(){
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
-  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); } catch(_) {}
+  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) document.title = "شجرة عائلة "+state.familyName; } catch(_) {}
   const rec = await loadAuthRecord();
   if (rec){
     const remembered = loadRememberedSession();
