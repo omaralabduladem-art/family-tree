@@ -208,6 +208,9 @@ const state = {
   syncing: false,
   lastFitKey: null,
   showStats: false,
+  showKinship: false,
+  kinshipA: "",
+  kinshipB: "",
   showChangePw: false,
   familyName: "",
   showFamilyName: false,
@@ -216,6 +219,12 @@ const state = {
 const app = document.getElementById("app");
 let pollTimer = null;
 let gestureActive = false; // true while the user is actively dragging/pinching the tree
+function updateAppTitle(familyName){
+  const full = familyName ? "شجرة عائلة "+familyName : "شجرة العائلة";
+  document.title = full;
+  const meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (meta) meta.setAttribute("content", full);
+}
 let globalMouseDrag = {active:false, lastX:0, lastY:0, wrap:null};
 window.addEventListener("mousemove", e => {
   if (!globalMouseDrag.active || !globalMouseDrag.wrap) return;
@@ -310,6 +319,7 @@ async function loadPeople(){
     } else {
       state.familyName = meta.familyName || "";
     }
+    if (state.familyName) updateAppTitle(state.familyName);
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -346,6 +356,8 @@ function render(){
 
 function renderLogin(){
   let html = '<div class="ft-login-wrap"><div class="ft-login-card">';
+  const treeTag = TREE_ID ? '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">🌳 الشجرة: '+esc(TREE_ID)+'</div>' : '';
+  html += treeTag;
   const loginTitle = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
   if (state.mode === "checking"){
     html += '<div class="spin" style="font-size:24px;">⏳</div>';
@@ -564,8 +576,8 @@ function renderApp(){
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
   const titleText = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
-  html += '<header><h1>'+titleText+'</h1><div class="sub">'
-    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : '')
+  html += '<header><h1>'+titleText+(TREE_ID?' <span style="font-size:14px;color:var(--cream-dim);">('+esc(TREE_ID)+')</span>':'')+'</h1><div class="sub">'
+    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : 'ابدأ ببناء شجرة عائلتك')
     + (state.syncing ? ' <span class="spin">⏳</span>' : '')
     + '</div>'
     + '<div class="userbar"><span class="role-badge">'+(isAdmin?'👑 مسؤول أول':(isEditor?'✏️ محرِّر':'👁️ مشاهد فقط'))+'</span>'
@@ -577,6 +589,7 @@ function renderApp(){
     + '<div class="toolbar">'
     + (isEditor ? '<button class="ft-btn" id="addPersonBtn">➕ إضافة فرد</button>' : '')
     + '<button class="ft-btn secondary" id="showStatsBtn">📊 إحصائيات</button>'
+    + '<button class="ft-btn secondary" id="showKinshipBtn">🔗 القرابة بين شخصين</button>'
     + '<div class="search"><input id="searchInput" dir="rtl" placeholder="ابحث عن اسم..." value="'+esc(state.search)+'"></div>'
     + '</div>'
     + '<div class="legend">';
@@ -617,6 +630,7 @@ function renderApp(){
   if (isEditor && state.editId) html += renderEditModal();
   if (isEditor && state.confirmDeleteId) html += renderConfirmDelete();
   if (state.showStats) html += renderStatsModal();
+  if (state.showKinship) html += renderKinshipModal();
   if (isAdmin && state.showChangePw) html += renderChangePwModal();
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
 
@@ -697,6 +711,50 @@ function computeStats(){
   return {total, males, females, deceased, alive, genRows, topNames};
 }
 
+function findCommonAncestor(idA, idB){
+  if (!idA || !idB || !state.people[idA] || !state.people[idB]) return null;
+  const chainA = []; { let cur = state.people[idA], guard=0; while (cur && guard<100){ chainA.push(cur.id); cur = cur.parentId ? state.people[cur.parentId] : null; guard++; } }
+  const chainB = []; { let cur = state.people[idB], guard=0; while (cur && guard<100){ chainB.push(cur.id); cur = cur.parentId ? state.people[cur.parentId] : null; guard++; } }
+  const setA = new Map(chainA.map((id,i)=>[id,i]));
+  for (let j=0; j<chainB.length; j++){
+    if (setA.has(chainB[j])) return {ancestorId: chainB[j], distA: setA.get(chainB[j]), distB: j};
+  }
+  return null;
+}
+function renderKinshipModal(){
+  const people = Object.values(state.people).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+  const options = '<option value="">اختر شخصاً...</option>' + people.map(p=>'<option value="'+p.id+'"'+(state.kinshipA===p.id||state.kinshipB===p.id?'':'')+'>'+esc(p.name)+'</option>').join('');
+  let result = '';
+  if (state.kinshipA && state.kinshipB){
+    if (state.kinshipA === state.kinshipB){
+      result = '<div style="margin-top:16px;color:var(--cream-dim);">اختر شخصين مختلفين.</div>';
+    } else {
+      const r = findCommonAncestor(state.kinshipA, state.kinshipB);
+      const nameA = esc(state.people[state.kinshipA].name), nameB = esc(state.people[state.kinshipB].name);
+      if (!r){
+        result = '<div style="margin-top:16px;color:var(--cream-dim);">لا يوجد جد مشترك مسجّل بينهما بالشجرة.</div>';
+      } else if (r.distA===0 || r.distB===0){
+        const parentName = r.distA===0 ? nameA : nameB, childName = r.distA===0 ? nameB : nameA, dist = Math.max(r.distA,r.distB);
+        result = '<div class="detail-rel" style="margin-top:16px;">'
+          + '<div><b>'+parentName+'</b> هو سلف مباشر لـ<b>'+childName+'</b> (يفصل بينهما '+dist+' '+(dist===1?'جيل':'أجيال')+').</div></div>';
+      } else {
+        const ancestorName = esc(state.people[r.ancestorId].name);
+        result = '<div class="detail-rel" style="margin-top:16px;">'
+          + '<div>الجد المشترك: <b>'+ancestorName+'</b></div>'
+          + '<div style="margin-top:6px;">'+nameA+' يبعد عنه <b>'+r.distA+'</b> '+(r.distA===1?'جيل':'أجيال')+'</div>'
+          + '<div>'+nameB+' يبعد عنه <b>'+r.distB+'</b> '+(r.distB===1?'جيل':'أجيال')+'</div>'
+          + (r.distA===1 && r.distB===1 ? '<div style="margin-top:8px;color:var(--gold-light);">(إخوة/أخوات من نفس الأب)</div>' : '')
+          + '</div>';
+      }
+    }
+  }
+  return '<div class="overlay" id="kinshipOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeKinshipBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:18px;">🔗 القرابة بين شخصين</div>'
+    + '<div class="ft-field"><label>الشخص الأول</label><select id="kinshipASelect">'+options.replace('value="'+state.kinshipA+'"','value="'+state.kinshipA+'" selected')+'</select></div>'
+    + '<div class="ft-field"><label>الشخص الثاني</label><select id="kinshipBSelect">'+options.replace('value="'+state.kinshipB+'"','value="'+state.kinshipB+'" selected')+'</select></div>'
+    + result + '</div></div>';
+}
 function renderStatsModal(){
   const s = computeStats();
   let html = '<div class="overlay" id="statsOverlay"><div class="modal" onclick="event.stopPropagation()">'
@@ -862,11 +920,7 @@ function wireAppEvents(layout){
     state.search = "";
     state.highlightGen = g;
     renderApp();
-    const idsInGen = Object.keys(layout.positions).filter(id => layout.positions[id].gen === g);
-    if (idsInGen.length){
-      idsInGen.sort((a,b2) => layout.positions[a].x - layout.positions[b2].x);
-      scrollToPerson(idsInGen[Math.floor(idsInGen.length/2)]);
-    }
+    document.getElementById("canvasWrap").scrollTo({left:0, top: pxY(layout.genRowStart[g])*state.zoom-100, behavior:"smooth"});
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
   if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
@@ -874,6 +928,15 @@ function wireAppEvents(layout){
   if (statsOverlay){
     statsOverlay.onclick = () => { state.showStats=false; render(); };
     document.getElementById("closeStatsBtn").onclick = () => { state.showStats=false; render(); };
+  }
+  const showKinshipBtn = document.getElementById("showKinshipBtn");
+  if (showKinshipBtn) showKinshipBtn.onclick = () => { state.showKinship = true; render(); };
+  const kinshipOverlay = document.getElementById("kinshipOverlay");
+  if (kinshipOverlay){
+    kinshipOverlay.onclick = () => { state.showKinship=false; state.kinshipA=""; state.kinshipB=""; render(); };
+    document.getElementById("closeKinshipBtn").onclick = () => { state.showKinship=false; state.kinshipA=""; state.kinshipB=""; render(); };
+    document.getElementById("kinshipASelect").onchange = e => { state.kinshipA = e.target.value; render(); };
+    document.getElementById("kinshipBSelect").onchange = e => { state.kinshipB = e.target.value; render(); };
   }
 
   const editFamilyNameBtn = document.getElementById("editFamilyNameBtn");
@@ -891,6 +954,7 @@ function wireAppEvents(layout){
         const cleanMeta = {...meta}; delete cleanMeta.familyName;
         await saveMeta({...cleanMeta, familyNameEnc});
         state.familyName = name;
+        if (name) updateAppTitle(name);
         state.showFamilyName = false;
       } catch(e){ state.err = "تعذّر حفظ اسم العائلة."; }
       state.busy = false; render();
@@ -1104,7 +1168,7 @@ function wireAppEvents(layout){
 // ---------- Boot ----------
 (async function boot(){
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
-  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); } catch(_) {}
+  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) updateAppTitle(state.familyName); } catch(_) {}
   const rec = await loadAuthRecord();
   if (rec){
     const remembered = loadRememberedSession();
