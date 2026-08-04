@@ -566,8 +566,8 @@ function renderApp(){
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
   const titleText = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
-  html += '<header><h1>'+titleText+(TREE_ID?' <span style="font-size:14px;color:var(--cream-dim);">('+esc(TREE_ID)+')</span>':'')+'</h1><div class="sub">'
-    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : 'ابدأ ببناء شجرة عائلتك')
+  html += '<header><h1>'+titleText+'</h1><div class="sub">'
+    + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : '')
     + (state.syncing ? ' <span class="spin">⏳</span>' : '')
     + '</div>'
     + '<div class="userbar"><span class="role-badge">'+(isAdmin?'👑 مسؤول أول':(isEditor?'✏️ محرِّر':'👁️ مشاهد فقط'))+'</span>'
