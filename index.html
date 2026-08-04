@@ -346,8 +346,6 @@ function render(){
 
 function renderLogin(){
   let html = '<div class="ft-login-wrap"><div class="ft-login-card">';
-  const treeTag = TREE_ID ? '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">🌳 الشجرة: '+esc(TREE_ID)+'</div>' : '';
-  html += treeTag;
   const loginTitle = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
   if (state.mode === "checking"){
     html += '<div class="spin" style="font-size:24px;">⏳</div>';
@@ -864,7 +862,11 @@ function wireAppEvents(layout){
     state.search = "";
     state.highlightGen = g;
     renderApp();
-    document.getElementById("canvasWrap").scrollTo({left:0, top: pxY(layout.genRowStart[g])*state.zoom-100, behavior:"smooth"});
+    const idsInGen = Object.keys(layout.positions).filter(id => layout.positions[id].gen === g);
+    if (idsInGen.length){
+      idsInGen.sort((a,b2) => layout.positions[a].x - layout.positions[b2].x);
+      scrollToPerson(idsInGen[Math.floor(idsInGen.length/2)]);
+    }
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
   if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
