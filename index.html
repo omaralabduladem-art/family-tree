@@ -216,6 +216,12 @@ const state = {
 const app = document.getElementById("app");
 let pollTimer = null;
 let gestureActive = false; // true while the user is actively dragging/pinching the tree
+function updateAppTitle(familyName){
+  const full = familyName ? "شجرة عائلة "+familyName : "شجرة العائلة";
+  document.title = full;
+  const meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (meta) meta.setAttribute("content", full);
+}
 let globalMouseDrag = {active:false, lastX:0, lastY:0, wrap:null};
 window.addEventListener("mousemove", e => {
   if (!globalMouseDrag.active || !globalMouseDrag.wrap) return;
@@ -310,7 +316,7 @@ async function loadPeople(){
     } else {
       state.familyName = meta.familyName || "";
     }
-    if (state.familyName) document.title = "شجرة عائلة "+state.familyName;
+    if (state.familyName) updateAppTitle(state.familyName);
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -890,7 +896,7 @@ function wireAppEvents(layout){
         const cleanMeta = {...meta}; delete cleanMeta.familyName;
         await saveMeta({...cleanMeta, familyNameEnc});
         state.familyName = name;
-        if (name) document.title = "شجرة عائلة "+name;
+        if (name) updateAppTitle(name);
         state.showFamilyName = false;
       } catch(e){ state.err = "تعذّر حفظ اسم العائلة."; }
       state.busy = false; render();
@@ -1104,7 +1110,7 @@ function wireAppEvents(layout){
 // ---------- Boot ----------
 (async function boot(){
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
-  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) document.title = "شجرة عائلة "+state.familyName; } catch(_) {}
+  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) updateAppTitle(state.familyName); } catch(_) {}
   const rec = await loadAuthRecord();
   if (rec){
     const remembered = loadRememberedSession();
