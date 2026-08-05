@@ -1,1 +1,77 @@
 
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="عائلاتنا">
+<meta name="theme-color" content="#0B2B26">
+<title>عائلاتنا</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap');
+  *{box-sizing:border-box;}
+  :root{
+    --bg:#0B2B26; --bg-2:#0F332C; --panel:#123A33;
+    --gold:#C9A15A; --gold-light:#E9CD8C;
+    --cream:#F3EDE0; --cream-dim:#B9AF9C;
+  }
+  body{
+    margin:0; min-height:100vh; min-height:100dvh;
+    background:radial-gradient(ellipse at 50% -10%, var(--bg-2), var(--bg) 65%);
+    font-family:'Tajawal',sans-serif; color:var(--cream);
+    display:flex; flex-direction:column; align-items:center;
+    padding:48px 20px 40px;
+  }
+  .eyebrow{font-size:12.5px; letter-spacing:2px; color:var(--gold); opacity:.85; margin-bottom:10px;}
+  h1{font-family:'Amiri',serif; font-size:32px; font-weight:700; color:var(--gold-light); margin:0 0 6px; text-align:center; text-shadow:0 2px 8px rgba(0,0,0,0.4);}
+  .sub{font-size:13.5px; color:var(--cream-dim); text-align:center; margin-bottom:8px;}
+  .branch{width:64px; height:14px; margin:18px 0 30px; opacity:.8;}
+  .cards{width:100%; max-width:420px; display:flex; flex-direction:column; gap:16px;}
+  .card{
+    display:flex; text-decoration:none; color:inherit;
+    background:var(--panel); border:1px solid rgba(201,161,90,0.28);
+    border-radius:18px; padding:20px 18px;
+    align-items:center; gap:14px;
+  }
+  .card-icon{
+    width:48px; height:48px; flex-shrink:0; border-radius:14px;
+    background:linear-gradient(160deg, rgba(201,161,90,0.22), rgba(201,161,90,0.06));
+    display:flex; align-items:center; justify-content:center; font-size:24px;
+  }
+  .card-text{flex:1; min-width:0;}
+  .card-name{font-family:'Amiri',serif; font-size:19px; font-weight:700; color:var(--gold-light); margin-bottom:3px;}
+  .card-meta{font-size:12px; color:var(--cream-dim);}
+  .card-arrow{color:var(--gold); font-size:20px; flex-shrink:0;}
+  .footer-note{margin-top:36px; font-size:11.5px; color:var(--cream-dim); opacity:.7; text-align:center; line-height:1.8;}
+</style>
+</head>
+<body>
+  <div class="eyebrow">بوابة العائلات</div>
+  <h1>اختر شجرتك</h1>
+  <div class="sub">اضغط على الشجرة اللي تبي تفتحها</div>
+  <svg class="branch" viewBox="0 0 64 14"><path d="M2 7 H62 M20 7 V2 M32 7 V12 M44 7 V2" stroke="#C9A15A" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+
+  <div class="cards">
+    <a class="card" href="../">
+      <div class="card-icon">🌳</div>
+      <div class="card-text">
+        <div class="card-name">شجرة أحمد آل عبدالعظيم</div>
+        <div class="card-meta">الشجرة الرئيسية</div>
+      </div>
+      <div class="card-arrow">‹</div>
+    </a>
+    <a class="card" href="../?tree=آل-عبدالعظيم">
+      <div class="card-icon">🌿</div>
+      <div class="card-text">
+        <div class="card-name">شجرة آل عبدالعظيم</div>
+        <div class="card-meta">شجرة مستقلة</div>
+      </div>
+      <div class="card-arrow">‹</div>
+    </a>
+  </div>
+
+  <div class="footer-note">كل شجرة مستقلة تماماً ببياناتها وحسابها الخاص</div>
+</body>
+</html>
