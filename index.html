@@ -17,7 +17,7 @@
 :root{
   --bg:#0B2B26; --bg-2:#0F332C; --panel:#133830; --panel-2:#175243;
   --gold:#C9A15A; --gold-light:#E9CD8C; --cream:#F2EBDA; --cream-dim:#C9C0AC;
-  --male:#7FA6C4; --female:#C98CA0; --danger:#C4685F;
+  --male:#4FA3E3; --female:#E87FA8; --danger:#C4685F;
 }
 body{margin:0;font-family:'Tajawal',sans-serif;background:radial-gradient(ellipse at 50% -10%, var(--bg-2), var(--bg) 60%);color:var(--cream);overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
@@ -53,11 +53,11 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .legend button:hover{border-color:var(--gold);color:var(--gold-light);}
 #canvasWrap{position:relative;flex:1;min-height:0;overflow:auto;touch-action:none;}
 #canvas{position:relative;transform-origin:top right;}
-.node{position:absolute;width:90px;text-align:center;cursor:pointer;background:rgba(23,82,67,0.55);border:1.5px solid var(--male);border-radius:12px;padding:7px 6px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
-.node.female{border-color:var(--female);}
-.node.deceased{border-color:#8A8A8A;background:rgba(90,90,90,0.35);}
-.node.deceased .name{color:#D6D6D6;}
-.node.deceased .years{color:#9A9A9A;}
+.node{position:absolute;width:90px;text-align:center;cursor:pointer;background:linear-gradient(160deg, rgba(31,100,150,0.4), rgba(23,82,67,0.6));border:2px solid var(--male);border-radius:12px;padding:7px 6px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
+.node.female{border-color:var(--female);background:linear-gradient(160deg, rgba(160,45,90,0.4), rgba(23,82,67,0.6));}
+.node.deceased{border-color:#A3A3A3;background:rgba(80,80,80,0.65);}
+.node.deceased .name{color:#E2E2E2;}
+.node.deceased .years{color:#B5B5B5;}
 .node.match{border-color:var(--gold-light);box-shadow:0 0 14px 2px var(--gold-light);}
 .node .name{font-size:13.5px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .node .years{font-size:11px;color:var(--cream-dim);margin-top:2px;}
@@ -755,13 +755,13 @@ function renderApp(){
     Object.values(state.people).forEach(p=>{
       const pos = layout.positions[p.id]; if (!pos) return;
       const match = (state.search.trim() && p.name && p.name.includes(state.search.trim())) || (state.highlightGen && pos.gen === state.highlightGen);
-      const isDeceased = p.deathYear && String(p.deathYear).trim();
+      const isDeceased = p.deceased || (p.deathYear && String(p.deathYear).trim());
       const isPicked = (state.kinshipPickA===p.id || state.kinshipPickB===p.id);
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
-        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'\u2069'+'</div></div>';
+        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div></div>';
     });
     html += '</div></div>';
   }
@@ -814,7 +814,7 @@ function renderDetailModal(p, isEditor){
     html += '</div>';
   }
   html += '<div class="detail-name">'+esc(p.name)+'</div>'
-    + '<div class="detail-meta">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'\u2069'+'</div>'
+    + '<div class="detail-meta">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div>'
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
     + '<div class="detail-rel">'
     + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
@@ -840,7 +840,7 @@ function computeStats(){
   const total = list.length;
   const males = list.filter(p=>p.gender==='m').length;
   const females = list.filter(p=>p.gender==='f').length;
-  const deceased = list.filter(p=>p.deathYear && String(p.deathYear).trim()).length;
+  const deceased = list.filter(p=>p.deceased || (p.deathYear && String(p.deathYear).trim())).length;
   const alive = total - deceased;
   const byGen = {};
   list.forEach(p=>{ const g = Math.max(p.gen||1,1); byGen[g] = (byGen[g]||0)+1; });
@@ -1000,6 +1000,7 @@ function renderEditModal(){
     wifeName: existing?.wifeName || (existing?.gender==='m' ? (existing?.spouseName||"") : ""),
     birthYear: existing?.birthYear || "",
     deathYear: existing?.deathYear || "", bio: existing?.bio || "",
+    deceased: existing?.deceased || false,
     photos: existing?.photos ? [...existing.photos] : (existing?.photo ? [existing.photo] : []),
   };
   state._editForm = f;
@@ -1018,6 +1019,8 @@ function renderEditModal(){
     + '<div class="ft-field"><label>الزوجة</label><input id="f_wifeName" dir="rtl" value="'+esc(f.wifeName)+'" placeholder="اكتب الاسم (اختياري)"></div>'
     + '<div class="ft-row2"><div class="ft-field"><label>سنة الميلاد</label><input id="f_birth" value="'+esc(f.birthYear)+'" placeholder="مثال: 1950"></div>'
     + '<div class="ft-field"><label>سنة الوفاة (اختياري)</label><input id="f_death" value="'+esc(f.deathYear)+'"></div></div>'
+    + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--cream-dim);margin:0 0 14px;text-align:right;justify-content:flex-end;">'
+    + '<input type="checkbox" id="f_deceased" '+(f.deceased?'checked':'')+'> متوفى (حتى بدون تحديد سنة الوفاة)</label>'
     + '<div class="ft-field"><label>نبذة</label><textarea id="f_bio" dir="rtl">'+esc(f.bio)+'</textarea></div>'
     + '<div class="ft-field"><label>الصور (يمكن إضافة أكثر من صورة)</label>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
@@ -1207,6 +1210,7 @@ function wireAppEvents(layout){
         parentId: val("f_parent"), motherName: val("f_motherName"),
         husbandName: val("f_husbandName"), wifeName: val("f_wifeName"),
         birthYear: val("f_birth"), deathYear: val("f_death"), bio: val("f_bio"),
+        deceased: document.getElementById("f_deceased") ? document.getElementById("f_deceased").checked : (state._editForm ? !!state._editForm.deceased : false),
         photos: state._editForm ? state._editForm.photos : [],
       };
     };
@@ -1234,6 +1238,7 @@ function wireAppEvents(layout){
         parentId: state._editForm.parentId || null, motherName: state._editForm.motherName||"",
         husbandName: state._editForm.husbandName||"", wifeName: state._editForm.wifeName||"",
         birthYear: state._editForm.birthYear||"", deathYear: state._editForm.deathYear||"",
+        deceased: !!(state._editForm.deceased || (state._editForm.deathYear && String(state._editForm.deathYear).trim())),
         bio: state._editForm.bio||"", photos: state._editForm.photos||[],
         createdAt: existing?.createdAt || Date.now(),
       };
