@@ -158,6 +158,21 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
     border-radius:8px;background:var(--panel-2);text-decoration:none;
   }
 }
+
+/* On-tree kinship picking */
+.kinship-banner{
+  position:fixed;top:10px;left:50%;transform:translateX(-50%);
+  background:var(--panel);border:1px solid rgba(201,161,90,0.5);color:var(--cream);
+  padding:10px 16px;border-radius:12px;z-index:60;font-size:13px;
+  display:flex;align-items:center;gap:10px;max-width:90vw;text-align:center;
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+.kinship-banner button{
+  background:var(--panel-2);border:1px solid rgba(201,161,90,0.4);color:var(--cream-dim);
+  border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;flex-shrink:0;
+}
+.node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
+.node.kinship-dim{opacity:0.15;}
 </style>
 </head>
 <body>
@@ -273,6 +288,9 @@ const state = {
   showKinship: false,
   kinshipA: "",
   kinshipB: "",
+  kinshipMode: null,
+  kinshipPickA: null,
+  kinshipPickB: null,
   showChangePw: false,
   familyName: "",
   showFamilyName: false,
@@ -635,8 +653,42 @@ function renderApp(){
   const layout = computeLayout(state.people);
   const peopleCount = Object.keys(state.people).length;
 
+  let kinshipHighlightSet = null;
+  if (state.kinshipMode === "result" && state.kinshipPickA && state.kinshipPickB){
+    kinshipHighlightSet = new Set();
+    const r = findCommonAncestor(state.kinshipPickA, state.kinshipPickB);
+    if (r){
+      let cur = state.people[state.kinshipPickA], guard=0;
+      while (cur && guard<100){ kinshipHighlightSet.add(cur.id); if (cur.id===r.ancestorId) break; cur = cur.parentId ? state.people[cur.parentId] : null; guard++; }
+      cur = state.people[state.kinshipPickB]; guard=0;
+      while (cur && guard<100){ kinshipHighlightSet.add(cur.id); if (cur.id===r.ancestorId) break; cur = cur.parentId ? state.people[cur.parentId] : null; guard++; }
+    } else {
+      kinshipHighlightSet.add(state.kinshipPickA); kinshipHighlightSet.add(state.kinshipPickB);
+    }
+  }
+
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
+  if (state.kinshipMode === "picking" || state.kinshipMode === "result"){
+    let bannerText = "";
+    if (state.kinshipMode === "picking"){
+      bannerText = state.kinshipPickA ? "اختر الشخص الثاني من الشجرة..." : "اختر الشخص الأول من الشجرة...";
+    } else {
+      const r = findCommonAncestor(state.kinshipPickA, state.kinshipPickB);
+      const nameA = esc(state.people[state.kinshipPickA]?.name||"");
+      const nameB = esc(state.people[state.kinshipPickB]?.name||"");
+      if (!r){
+        bannerText = "لا يوجد جد مشترك مسجّل بين "+nameA+" و"+nameB+".";
+      } else if (r.distA===0 || r.distB===0){
+        const parentName = r.distA===0?nameA:nameB, childName = r.distA===0?nameB:nameA, dist=Math.max(r.distA,r.distB);
+        bannerText = "<b>"+parentName+"</b> سلف مباشر لـ<b>"+childName+"</b> ("+dist+" "+(dist===1?"جيل":"أجيال")+")";
+      } else {
+        const ancestorName = esc(state.people[r.ancestorId]?.name||"");
+        bannerText = "الجد المشترك: <b>"+ancestorName+"</b> — "+nameA+" ("+r.distA+") و"+nameB+" ("+r.distB+")"+(r.distA===1&&r.distB===1?" — إخوة/أخوات":"");
+      }
+    }
+    html += '<div class="kinship-banner">'+bannerText+' <button id="kinshipCancelBtn">✕ إلغاء</button></div>';
+  }
   const titleText = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
   html += '<header><h1>'+titleText+(TREE_ID?' <span style="font-size:14px;color:var(--cream-dim);">('+esc(TREE_ID)+')</span>':'')+'</h1><div class="sub">'
     + (peopleCount>0 ? peopleCount+' فرداً · '+layout.maxGen+' '+(layout.maxGen===1?'جيل':'أجيال') : 'ابدأ ببناء شجرة عائلتك')
@@ -673,7 +725,12 @@ function renderApp(){
       const pp = layout.positions[p.parentId], cp = layout.positions[p.id];
       const x1 = layout.width - (pxX(pp.x)+NODE_W/2), y1 = pxY(pp.row)+NODE_H;
       const x2 = layout.width - (pxX(cp.x)+NODE_W/2), y2 = pxY(cp.row);
-      html += '<path d="'+elbowPath(x1,y1,x2,y2,14)+'" stroke="#C9A15A" stroke-width="2.5" fill="none"/>';
+      const inChain = kinshipHighlightSet && kinshipHighlightSet.has(p.id) && kinshipHighlightSet.has(p.parentId);
+      const dimmed = kinshipHighlightSet && !inChain;
+      const strokeColor = inChain ? "#E9CD8C" : "#C9A15A";
+      const strokeWidth = inChain ? "4" : "2.5";
+      const opacity = dimmed ? "0.12" : "1";
+      html += '<path d="'+elbowPath(x1,y1,x2,y2,14)+'" stroke="'+strokeColor+'" stroke-width="'+strokeWidth+'" fill="none" opacity="'+opacity+'"/>';
     });
     html += '</svg>';
     for (let g=1; g<=layout.maxGen; g++) html += '<div class="genlabel" style="top:'+(pxY(layout.genRowStart[g])-30)+'px;">'+esc(genLabel(g))+'</div>';
@@ -681,7 +738,11 @@ function renderApp(){
       const pos = layout.positions[p.id]; if (!pos) return;
       const match = (state.search.trim() && p.name && p.name.includes(state.search.trim())) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deathYear && String(p.deathYear).trim();
-      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
+      const isPicked = (state.kinshipPickA===p.id || state.kinshipPickB===p.id);
+      const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
+      const kinshipDim = kinshipHighlightSet && !inHighlightSet;
+      const kinshipHL = isPicked || inHighlightSet;
+      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
         + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):'')+'\u2069'+'</div></div>';
     });
     html += '</div></div>';
@@ -984,7 +1045,12 @@ function wireAppEvents(layout){
     state.search = "";
     state.highlightGen = g;
     renderApp();
-    document.getElementById("canvasWrap").scrollTo({left:0, top: pxY(layout.genRowStart[g])*state.zoom-100, behavior:"smooth"});
+    const genLayout = computeLayout(state.people);
+    const inGen = Object.values(state.people).filter(p => (genLayout.positions[p.id]?.gen||1) === g);
+    if (inGen.length){
+      inGen.sort((a,b2) => (genLayout.positions[a.id]?.x||0) - (genLayout.positions[b2.id]?.x||0));
+      scrollToPerson(inGen[0].id);
+    }
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
   if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
@@ -994,7 +1060,14 @@ function wireAppEvents(layout){
     document.getElementById("closeStatsBtn").onclick = () => { state.showStats=false; render(); };
   }
   const showKinshipBtn = document.getElementById("showKinshipBtn");
-  if (showKinshipBtn) showKinshipBtn.onclick = () => { state.showKinship = true; render(); };
+  if (showKinshipBtn) showKinshipBtn.onclick = () => {
+    state.kinshipMode = "picking"; state.kinshipPickA = null; state.kinshipPickB = null; renderApp();
+  };
+  const kinshipCancelBtn = document.getElementById("kinshipCancelBtn");
+  if (kinshipCancelBtn) kinshipCancelBtn.onclick = (e) => {
+    e.stopPropagation();
+    state.kinshipMode = null; state.kinshipPickA = null; state.kinshipPickB = null; renderApp();
+  };
   const kinshipOverlay = document.getElementById("kinshipOverlay");
   if (kinshipOverlay){
     kinshipOverlay.onclick = () => { state.showKinship=false; state.kinshipA=""; state.kinshipB=""; render(); };
@@ -1068,7 +1141,18 @@ function wireAppEvents(layout){
   const zi = document.getElementById("zoomInBtn"); if (zi) zi.onclick = () => { state.zoom=Math.min(1.6,state.zoom+0.1); renderApp(); };
   const zo = document.getElementById("zoomOutBtn"); if (zo) zo.onclick = () => { state.zoom=Math.max(0.08,state.zoom-0.1); renderApp(); };
 
-  document.querySelectorAll(".node").forEach(n => n.onclick = () => { state.detailId = n.dataset.id; render(); });
+  document.querySelectorAll(".node").forEach(n => n.onclick = (e) => {
+    if (state.kinshipMode){
+      e.stopPropagation();
+      const id = n.dataset.id;
+      if (!state.kinshipPickA){ state.kinshipPickA = id; }
+      else if (!state.kinshipPickB && id !== state.kinshipPickA){ state.kinshipPickB = id; state.kinshipMode = "result"; }
+      else { state.kinshipPickA = id; state.kinshipPickB = null; state.kinshipMode = "picking"; }
+      renderApp();
+      return;
+    }
+    state.detailId = n.dataset.id; render();
+  });
 
   const detailOverlay = document.getElementById("detailOverlay");
   if (detailOverlay){
@@ -1213,6 +1297,12 @@ function wireAppEvents(layout){
       wrap.style.cursor = "grabbing";
     });
     wrap.style.cursor = "grab";
+    wrap.addEventListener("click", e => {
+      if (state.kinshipMode && !e.target.closest(".node")){
+        state.kinshipMode = null; state.kinshipPickA = null; state.kinshipPickB = null;
+        renderApp();
+      }
+    });
 
     // Auto-fit only on first load, never again afterward (so edits/additions don't reset the user's view)
     requestAnimationFrame(() => {
