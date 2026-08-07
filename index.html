@@ -294,6 +294,7 @@ const state = {
   showChangePw: false,
   familyName: "",
   showFamilyName: false,
+  confirmImport: false,
 };
 
 const app = document.getElementById("app");
@@ -717,6 +718,9 @@ function renderApp(){
     + '<button id="syncNowBtn">🔄 تحديث الآن</button>'
     + (isAdmin ? '<button id="changePwBtn">🔑 تغيير كلمات المرور</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
+    + (isAdmin ? '<button id="exportDataBtn">💾 نسخة احتياطية</button>' : '')
+    + (isAdmin ? '<button id="importDataBtn">📥 استيراد نسخة</button>' : '')
+    + (isAdmin ? '<input type="file" accept="application/json,.json" id="importDataInput" style="display:none;">' : '')
     + '<button id="logoutBtn">🚪 خروج</button>'
     + '</div></details></div>'
 
@@ -776,6 +780,7 @@ function renderApp(){
   if (state.showKinship) html += renderKinshipModal();
   if (isAdmin && state.showChangePw) html += renderChangePwModal();
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
+  if (isAdmin && state.confirmImport) html += renderConfirmImport();
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
@@ -985,6 +990,14 @@ function renderConfirmDelete(){
     + '</div></div>';
 }
 
+function renderConfirmImport(){
+  const count = state._pendingImport ? Object.keys(state._pendingImport.people||{}).length : 0;
+  return '<div class="overlay" id="confirmImportOverlay"><div class="modal" style="max-width:340px;text-align:center;" onclick="event.stopPropagation()">'
+    + '<div style="margin-bottom:16px;">⚠️ هذا سيستبدل <b>جميع</b> بيانات الشجرة الحالية بمحتوى الملف ('+count+' فرداً). لا يمكن التراجع بعد التأكيد.</div>'
+    + '<div class="modal-actions"><button class="ft-btn danger" id="confirmImportYes">استيراد واستبدال</button><button class="ft-btn secondary" id="confirmImportNo">إلغاء</button></div>'
+    + '</div></div>';
+}
+
 function renderEditModal(){
   const isChild = typeof state.editId === "string" && state.editId.startsWith("new-child-");
   const presetParentId = isChild ? state.editId.replace("new-child-","") : null;
@@ -1121,6 +1134,66 @@ function wireAppEvents(layout){
 
   const changePwBtn = document.getElementById("changePwBtn");
   if (changePwBtn) changePwBtn.onclick = () => { state.showChangePw = true; state.err=""; render(); };
+
+  const exportDataBtn = document.getElementById("exportDataBtn");
+  if (exportDataBtn) exportDataBtn.onclick = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      treeId: TREE_ID,
+      familyName: state.familyName || "",
+      people: state.people,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const dateStr = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = "family-tree-backup-"+(TREE_ID||"main")+"-"+dateStr+".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  };
+  const importDataBtn = document.getElementById("importDataBtn");
+  const importDataInput = document.getElementById("importDataInput");
+  if (importDataBtn && importDataInput){
+    importDataBtn.onclick = () => importDataInput.click();
+    importDataInput.onchange = async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed.people !== "object"){ state.err = "ملف غير صالح."; render(); }
+        else { state._pendingImport = parsed; state.confirmImport = true; state.err=""; render(); }
+      } catch(err){ state.err = "تعذّر قراءة الملف."; render(); }
+      importDataInput.value = "";
+    };
+  }
+  const confirmImportOverlay = document.getElementById("confirmImportOverlay");
+  if (confirmImportOverlay){
+    confirmImportOverlay.onclick = () => { state.confirmImport=false; state._pendingImport=null; render(); };
+    document.getElementById("confirmImportNo").onclick = () => { state.confirmImport=false; state._pendingImport=null; render(); };
+    document.getElementById("confirmImportYes").onclick = async () => {
+      const data = state._pendingImport;
+      state.confirmImport = false; state.busy = true; state.err=""; render();
+      try {
+        await fbDelete(PATH_PREFIX+"persons");
+        const entries = Object.values(data.people||{});
+        for (const p of entries){
+          if (!p.id) continue;
+          const cipher = await encryptText(state.session.cryptoKey, JSON.stringify(p));
+          await fbSet(PATH_PREFIX+"persons/"+p.id, cipher);
+        }
+        if (data.familyName){
+          const meta = await loadMeta();
+          const familyNameEnc = await encryptText(state.session.cryptoKey, data.familyName);
+          const cleanMeta = {...meta}; delete cleanMeta.familyName;
+          await saveMeta({...cleanMeta, familyNameEnc});
+          state.familyName = data.familyName;
+          updateAppTitle(data.familyName);
+        }
+        await loadPeople();
+      } catch(e){ state.err = "تعذّر إتمام الاستيراد."; }
+      state._pendingImport = null; state.busy = false; render();
+    };
+  }
   const changePwOverlay = document.getElementById("changePwOverlay");
   if (changePwOverlay){
     changePwOverlay.onclick = () => { state.showChangePw=false; state.err=""; render(); };
