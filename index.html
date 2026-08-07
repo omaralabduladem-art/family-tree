@@ -1149,7 +1149,7 @@ function wireAppEvents(layout){
     const dateStr = new Date().toISOString().slice(0,10);
     a.href = url; a.download = "family-tree-backup-"+(TREE_ID||"main")+"-"+dateStr+".json";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    setTimeout(()=>URL.revokeObjectURL(url), 120000);
   };
   const importDataBtn = document.getElementById("importDataBtn");
   const importDataInput = document.getElementById("importDataInput");
