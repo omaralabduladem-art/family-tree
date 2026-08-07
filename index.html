@@ -1143,13 +1143,13 @@ function wireAppEvents(layout){
       familyName: state.familyName || "",
       people: state.people,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const dateStr = new Date().toISOString().slice(0,10);
-    a.href = url; a.download = "family-tree-backup-"+(TREE_ID||"main")+"-"+dateStr+".json";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 120000);
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const dataUri = "data:text/plain;charset=utf-8," + encodeURIComponent(jsonStr);
+    const win = window.open(dataUri, "_blank");
+    if (!win){
+      state.err = "يرجى السماح للمتصفح بفتح نافذة جديدة (Pop-up)، ثم اضغط الزر مرة أخرى.";
+      render();
+    }
   };
   const importDataBtn = document.getElementById("importDataBtn");
   const importDataInput = document.getElementById("importDataInput");
