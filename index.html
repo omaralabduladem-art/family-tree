@@ -295,6 +295,9 @@ const state = {
   familyName: "",
   showFamilyName: false,
   confirmImport: false,
+  showExportModal: false,
+  exportJson: "",
+  copiedFlag: false,
 };
 
 const app = document.getElementById("app");
@@ -781,6 +784,7 @@ function renderApp(){
   if (isAdmin && state.showChangePw) html += renderChangePwModal();
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
+  if (isAdmin && state.showExportModal) html += renderExportModal();
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
@@ -998,6 +1002,17 @@ function renderConfirmImport(){
     + '</div></div>';
 }
 
+function renderExportModal(){
+  return '<div class="overlay" id="exportOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeExportBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">💾 نسخة احتياطية</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اضغط "نسخ إلى الحافظة"، ثم الصقه في إيميل ترسله لنفسك أو في تطبيق الملاحظات واحفظه. هذا أضمن طريقة تتجنب مشاكل تنزيل الملفات.</p>'
+    + '<button class="ft-btn" id="copyExportBtn" style="width:100%;justify-content:center;margin-bottom:10px;">'+(state.copiedFlag?'✅ تم النسخ':'📋 نسخ إلى الحافظة')+'</button>'
+    + '<textarea id="exportTextarea" readonly dir="ltr" style="width:100%;height:160px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;">'+esc(state.exportJson)+'</textarea>'
+    + '<p style="color:var(--cream-dim);font-size:11.5px;text-align:center;margin-top:8px;">إذا ما اشتغل زر النسخ، اضغط مطولاً داخل الصندوق فوق واختر "تحديد الكل" ثم "نسخ".</p>'
+    + '</div></div>';
+}
+
 function renderEditModal(){
   const isChild = typeof state.editId === "string" && state.editId.startsWith("new-child-");
   const presetParentId = isChild ? state.editId.replace("new-child-","") : null;
@@ -1143,14 +1158,32 @@ function wireAppEvents(layout){
       familyName: state.familyName || "",
       people: state.people,
     };
-    const jsonStr = JSON.stringify(payload, null, 2);
-    const dataUri = "data:text/plain;charset=utf-8," + encodeURIComponent(jsonStr);
-    const win = window.open(dataUri, "_blank");
-    if (!win){
-      state.err = "يرجى السماح للمتصفح بفتح نافذة جديدة (Pop-up)، ثم اضغط الزر مرة أخرى.";
-      render();
-    }
+    state.exportJson = JSON.stringify(payload, null, 2);
+    state.copiedFlag = false;
+    state.showExportModal = true;
+    render();
   };
+  const exportOverlay = document.getElementById("exportOverlay");
+  if (exportOverlay){
+    exportOverlay.onclick = () => { state.showExportModal=false; state.copiedFlag=false; render(); };
+    document.getElementById("closeExportBtn").onclick = () => { state.showExportModal=false; state.copiedFlag=false; render(); };
+    const copyBtn = document.getElementById("copyExportBtn");
+    if (copyBtn) copyBtn.onclick = async () => {
+      const ta = document.getElementById("exportTextarea");
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(state.exportJson);
+        } else if (ta) {
+          ta.focus(); ta.select(); document.execCommand("copy");
+        }
+        state.copiedFlag = true;
+      } catch(e){
+        if (ta){ ta.focus(); ta.select(); try { document.execCommand("copy"); state.copiedFlag = true; } catch(_) {} }
+      }
+      renderApp();
+      setTimeout(() => { state.copiedFlag = false; if (state.showExportModal) renderApp(); }, 3000);
+    };
+  }
   const importDataBtn = document.getElementById("importDataBtn");
   const importDataInput = document.getElementById("importDataInput");
   if (importDataBtn && importDataInput){
