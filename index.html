@@ -296,6 +296,7 @@ const state = {
   showFamilyName: false,
   confirmImport: false,
   showExportModal: false,
+  showImportPasteModal: false,
   exportJson: "",
   copiedFlag: false,
 };
@@ -722,7 +723,8 @@ function renderApp(){
     + (isAdmin ? '<button id="changePwBtn">🔑 تغيير كلمات المرور</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
     + (isAdmin ? '<button id="exportDataBtn">💾 نسخة احتياطية</button>' : '')
-    + (isAdmin ? '<button id="importDataBtn">📥 استيراد نسخة</button>' : '')
+    + (isAdmin ? '<button id="importDataBtn">📥 استيراد ملف</button>' : '')
+    + (isAdmin ? '<button id="importPasteBtn">📋 استيراد بلصق نص</button>' : '')
     + (isAdmin ? '<input type="file" accept="application/json,.json" id="importDataInput" style="display:none;">' : '')
     + '<button id="logoutBtn">🚪 خروج</button>'
     + '</div></details></div>'
@@ -785,6 +787,7 @@ function renderApp(){
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
   if (isAdmin && state.showExportModal) html += renderExportModal();
+  if (isAdmin && state.showImportPasteModal) html += renderImportPasteModal();
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
@@ -1013,6 +1016,17 @@ function renderExportModal(){
     + '</div></div>';
 }
 
+function renderImportPasteModal(){
+  return '<div class="overlay" id="importPasteOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeImportPasteBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📋 استيراد بلصق نص</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">افتح الملاحظة أو الإيميل اللي فيه النسخة الاحتياطية، انسخ النص كامل، ثم اضغط داخل الصندوق تحت والصقه.</p>'
+    + '<textarea id="importPasteTextarea" dir="ltr" placeholder="الصق نص النسخة الاحتياطية هنا..." style="width:100%;height:160px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;"></textarea>'
+    + errBlock()
+    + '<button class="ft-btn" id="importPasteContinueBtn" style="width:100%;justify-content:center;margin-top:12px;">متابعة</button>'
+    + '</div></div>';
+}
+
 function renderEditModal(){
   const isChild = typeof state.editId === "string" && state.editId.startsWith("new-child-");
   const presetParentId = isChild ? state.editId.replace("new-child-","") : null;
@@ -1197,6 +1211,23 @@ function wireAppEvents(layout){
         else { state._pendingImport = parsed; state.confirmImport = true; state.err=""; render(); }
       } catch(err){ state.err = "تعذّر قراءة الملف."; render(); }
       importDataInput.value = "";
+    };
+  }
+  const importPasteBtn = document.getElementById("importPasteBtn");
+  if (importPasteBtn) importPasteBtn.onclick = () => { state.showImportPasteModal = true; state.err=""; render(); };
+  const importPasteOverlay = document.getElementById("importPasteOverlay");
+  if (importPasteOverlay){
+    importPasteOverlay.onclick = () => { state.showImportPasteModal=false; state.err=""; render(); };
+    document.getElementById("closeImportPasteBtn").onclick = () => { state.showImportPasteModal=false; state.err=""; render(); };
+    document.getElementById("importPasteContinueBtn").onclick = () => {
+      const text = val("importPasteTextarea");
+      if (!text.trim()){ state.err = "الصق النص أولاً."; render(); return; }
+      try {
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed.people !== "object"){ state.err = "النص غير صالح — تأكد إنك نسخت النسخة الاحتياطية كاملة."; render(); return; }
+        state._pendingImport = parsed; state.confirmImport = true; state.showImportPasteModal = false; state.err="";
+        render();
+      } catch(err){ state.err = "تعذّر قراءة النص — تأكد إنه منسوخ كامل وبدون تعديل."; render(); }
     };
   }
   const confirmImportOverlay = document.getElementById("confirmImportOverlay");
