@@ -294,6 +294,7 @@ const state = {
   showChangePw: false,
   familyName: "",
   showFamilyName: false,
+  menuOpen: false,
   confirmImport: false,
   showExportModal: false,
   showImportPasteModal: false,
@@ -326,6 +327,20 @@ window.addEventListener("mouseup", () => {
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 // ---------- Layout ----------
+function computeEffectiveGen(people){
+  const childrenMap = {};
+  Object.values(people).forEach(p=>{ if(p.parentId && people[p.parentId]) (childrenMap[p.parentId]=childrenMap[p.parentId]||[]).push(p.id); });
+  const roots = Object.values(people).filter(p=>!p.parentId || !people[p.parentId]).map(p=>p.id);
+  const effectiveGen = {};
+  function assignGen(id, g){
+    if (effectiveGen[id] !== undefined) return;
+    effectiveGen[id] = g;
+    (childrenMap[id]||[]).forEach(cid => assignGen(cid, g+1));
+  }
+  roots.forEach(id => assignGen(id, 1));
+  Object.values(people).forEach(p => { if (effectiveGen[p.id] === undefined) assignGen(p.id, 1); });
+  return effectiveGen;
+}
 function computeLayout(people){
   const list = Object.values(people);
   const childrenMap = {};
@@ -333,6 +348,7 @@ function computeLayout(people){
   const roots = list.filter(p=>!p.parentId || !people[p.parentId]).map(p=>p.id);
   roots.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0));
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0)));
+  const effectiveGen = computeEffectiveGen(people);
 
   // Siblings (same parent) are packed close together; different branches get a bit more air.
   const xPos = {}; let cursor = 0; let lastParentId = undefined; const visited = new Set();
@@ -350,9 +366,9 @@ function computeLayout(people){
   roots.forEach(id=>assignX(id, null));
   list.forEach(p=>{ if(!visited.has(p.id)) assignX(p.id, p.parentId||null); });
 
-  const maxGen = Math.max(1, ...list.map(p=>p.gen||1));
+  const maxGen = Math.max(1, ...list.map(p=>effectiveGen[p.id]||1));
   const positions = {};
-  list.forEach(p=>{ const g=Math.max(p.gen||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
+  list.forEach(p=>{ const g=Math.max(effectiveGen[p.id]||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
   const width = (cursor+2)*COL_WIDTH + 220;
   const height = maxGen*ROW_HEIGHT + 140;
   const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
@@ -718,7 +734,7 @@ function renderApp(){
     + (state.syncing ? ' <span class="spin">⏳</span>' : '')
     + '</div>'
     + '<div class="userbar"><span class="role-badge">'+(isAdmin?'👑 مسؤول أول':(isEditor?'✏️ محرِّر':'👁️ مشاهد فقط'))+'</span>'
-    + '<details class="menu-details"><summary class="menu-summary">⋯</summary><div class="menu-buttons">'
+    + '<details class="menu-details"'+(state.menuOpen?' open':'')+'><summary class="menu-summary">⋯</summary><div class="menu-buttons">'
     + '<button id="syncNowBtn">🔄 تحديث الآن</button>'
     + (isAdmin ? '<button id="changePwBtn">🔑 تغيير كلمات المرور</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
@@ -855,7 +871,8 @@ function computeStats(){
   const deceased = list.filter(p=>p.deceased || (p.deathYear && String(p.deathYear).trim())).length;
   const alive = total - deceased;
   const byGen = {};
-  list.forEach(p=>{ const g = Math.max(p.gen||1,1); byGen[g] = (byGen[g]||0)+1; });
+  const effectiveGen = computeEffectiveGen(state.people);
+  list.forEach(p=>{ const g = Math.max(effectiveGen[p.id]||1,1); byGen[g] = (byGen[g]||0)+1; });
   const genRows = Object.keys(byGen).map(Number).sort((a,b)=>a-b).map(g=>({gen:g,count:byGen[g]}));
   const nameCounts = {};
   list.forEach(p=>{
@@ -1103,6 +1120,8 @@ function wireAppEvents(layout){
   };
   document.getElementById("logoutBtn").onclick = () => { if(pollTimer) clearInterval(pollTimer); forgetSession(); state.session=null; state.mode="login"; state.people={}; render(); };
   document.getElementById("syncNowBtn").onclick = () => loadPeople();
+  const menuDetailsEl = document.querySelector(".menu-details");
+  if (menuDetailsEl) menuDetailsEl.addEventListener("toggle", () => { state.menuOpen = menuDetailsEl.open; });
   document.querySelectorAll(".legend button").forEach(b => b.onclick = () => {
     const g = parseInt(b.dataset.gen);
     state.search = "";
