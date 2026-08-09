@@ -346,8 +346,9 @@ function computeLayout(people){
   const childrenMap = {};
   list.forEach(p=>{ if(p.parentId && people[p.parentId]) (childrenMap[p.parentId]=childrenMap[p.parentId]||[]).push(p.id); });
   const roots = list.filter(p=>!p.parentId || !people[p.parentId]).map(p=>p.id);
-  roots.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0));
-  Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=>(people[a].createdAt||0)-(people[b].createdAt||0)));
+  const rankOf = id => (people[id].order ?? people[id].createdAt ?? 0);
+  roots.sort((a,b)=> rankOf(a)-rankOf(b));
+  Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=> rankOf(a)-rankOf(b)));
   const effectiveGen = computeEffectiveGen(people);
 
   // Siblings (same parent) are packed close together; different branches get a bit more air.
@@ -376,6 +377,12 @@ function computeLayout(people){
 }
 const pxX = x => 80 + x*COL_WIDTH;
 const pxY = row => 60 + row*ROW_HEIGHT;
+function siblingsUnder(people, parentId, excludeId){
+  const key = parentId || null;
+  return Object.values(people)
+    .filter(p => (p.parentId||null) === key && p.id !== excludeId)
+    .sort((a,b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
+}
 function scrollToPerson(id){
   requestAnimationFrame(() => {
     const wrap = document.getElementById("canvasWrap");
@@ -1061,9 +1068,23 @@ function renderEditModal(){
     deathYear: existing?.deathYear || "", bio: existing?.bio || "",
     deceased: existing?.deceased || false,
     photos: existing?.photos ? [...existing.photos] : (existing?.photo ? [existing.photo] : []),
+    siblingPosition: null,
   };
   state._editForm = f;
   const others = Object.values(state.people).filter(p=>p.id !== state.editId);
+  const currentParentId = f.parentId || presetParentId || "";
+  const siblingsExcludingSelf = siblingsUnder(state.people, currentParentId, existing ? existing.id : null);
+  let defaultSiblingPos = siblingsExcludingSelf.length; // default: place after everyone (matches old append-to-end behavior)
+  if (existing){
+    const allSiblingsIncludingSelf = siblingsUnder(state.people, currentParentId, null);
+    const idx = allSiblingsIncludingSelf.findIndex(p=>p.id===existing.id);
+    if (idx !== -1) defaultSiblingPos = idx;
+  }
+  const selectedSiblingPos = (f.siblingPosition !== null && f.siblingPosition !== undefined) ? Number(f.siblingPosition) : defaultSiblingPos;
+  let siblingPosOptions = '<option value="0"'+(selectedSiblingPos===0?' selected':'')+'>🔝 الأول (قبل الجميع)</option>';
+  siblingsExcludingSelf.forEach((s,i) => {
+    siblingPosOptions += '<option value="'+(i+1)+'"'+(selectedSiblingPos===i+1?' selected':'')+'>بعد "'+esc(s.name)+'"</option>';
+  });
   let html = '<div class="overlay" id="editOverlay"><div class="modal" onclick="event.stopPropagation()">'
     + '<button class="modal-close" id="closeEditBtn">✕</button>'
     + '<div class="detail-name" style="margin-bottom:16px;">'+(existing?'تعديل بيانات الفرد':'إضافة فرد جديد')+'</div>'
@@ -1073,6 +1094,7 @@ function renderEditModal(){
     + '<div class="ft-field"><label>الأب</label><select id="f_parent"><option value="">— بدون —</option>'
     + others.map(p=>'<option value="'+p.id+'" '+(f.parentId===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')
     + '</select></div>'
+    + '<div class="ft-field"><label>الترتيب بين الإخوة</label><select id="f_siblingPosition">'+siblingPosOptions+'</select></div>'
     + '<div class="ft-field"><label>الأم</label><input id="f_motherName" dir="rtl" value="'+esc(f.motherName)+'" placeholder="اكتب الاسم (اختياري)"></div>'
     + '<div class="ft-field"><label>الزوج</label><input id="f_husbandName" dir="rtl" value="'+esc(f.husbandName)+'" placeholder="اكتب الاسم (اختياري)"></div>'
     + '<div class="ft-field"><label>الزوجة</label><input id="f_wifeName" dir="rtl" value="'+esc(f.wifeName)+'" placeholder="اكتب الاسم (اختياري)"></div>'
@@ -1367,8 +1389,15 @@ function wireAppEvents(layout){
         husbandName: val("f_husbandName"), wifeName: val("f_wifeName"),
         birthYear: val("f_birth"), deathYear: val("f_death"), bio: val("f_bio"),
         deceased: document.getElementById("f_deceased") ? document.getElementById("f_deceased").checked : (state._editForm ? !!state._editForm.deceased : false),
+        siblingPosition: document.getElementById("f_siblingPosition") ? document.getElementById("f_siblingPosition").value : (state._editForm ? state._editForm.siblingPosition : null),
         photos: state._editForm ? state._editForm.photos : [],
       };
+    };
+    const parentSelect = document.getElementById("f_parent");
+    if (parentSelect) parentSelect.onchange = () => {
+      grab();
+      state._editForm.siblingPosition = null; // parent changed, recompute default position among new siblings
+      render();
     };
     const photoInput = document.getElementById("f_photo");
     if (photoInput) photoInput.onchange = async (e) => {
@@ -1398,7 +1427,22 @@ function wireAppEvents(layout){
         bio: state._editForm.bio||"", photos: state._editForm.photos||[],
         createdAt: existing?.createdAt || Date.now(),
       };
+      // Apply chosen sibling position: recompute sequential order values for this person and all its siblings.
+      const chosenPos = Math.max(0, parseInt(state._editForm.siblingPosition, 10) || 0);
+      const siblingsList = siblingsUnder(state.people, person.parentId, person.id);
+      const insertPos = Math.min(chosenPos, siblingsList.length);
+      const orderedWithSelf = [...siblingsList];
+      orderedWithSelf.splice(insertPos, 0, person);
+      const renumbered = orderedWithSelf.map((p,i) => ({id:p.id, order:i}));
+      person.order = renumbered.find(r=>r.id===person.id).order;
       state.busy = true; state.err=""; render();
+      for (const r of renumbered){
+        if (r.id === person.id) continue;
+        const sib = state.people[r.id];
+        if (sib && sib.order !== r.order){
+          await savePersonCloud({...sib, order: r.order});
+        }
+      }
       await savePersonCloud(person);
       state.busy = false; state.editId = null; state._editForm=null; state.detailId=person.id; state.err="";
       render();
