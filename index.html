@@ -775,8 +775,8 @@ function renderApp(){
       + (isEditor ? '<button class="ft-btn" id="addFirstBtn">➕ أضف الجد الأكبر</button>' : '') + '</div>';
   } else {
     html += '<div id="canvasSizer" style="position:relative;width:'+(layout.width*state.zoom)+'px;height:'+(layout.height*state.zoom)+'px;">';
-    html += '<div id="canvas" style="position:absolute;top:0;right:0;width:'+layout.width+'px;height:'+layout.height+'px;transform:scale('+state.zoom+');transform-origin:top right;">';
-    html += '<svg width="'+layout.width+'" height="'+layout.height+'" style="position:absolute;top:0;right:0;"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C9A15A" stop-opacity="0.9"/><stop offset="100%" stop-color="#C9A15A" stop-opacity="0.3"/></linearGradient></defs>';
+    html += '<div id="canvas" style="position:absolute;top:0;left:0;width:'+layout.width+'px;height:'+layout.height+'px;transform:scale('+state.zoom+');transform-origin:top left;">';
+    html += '<svg width="'+layout.width+'" height="'+layout.height+'" style="position:absolute;top:0;left:0;"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C9A15A" stop-opacity="0.9"/><stop offset="100%" stop-color="#C9A15A" stop-opacity="0.3"/></linearGradient></defs>';
     Object.values(state.people).forEach(p=>{
       if (!p.parentId || !layout.positions[p.parentId]) return;
       const pp = layout.positions[p.parentId], cp = layout.positions[p.id];
@@ -889,8 +889,15 @@ function computeStats(){
   list.forEach(p=>{ const g = Math.max(effectiveGen[p.id]||1,1); byGen[g] = (byGen[g]||0)+1; });
   const genRows = Object.keys(byGen).map(Number).sort((a,b)=>a-b).map(g=>({gen:g,count:byGen[g]}));
   const nameCounts = {};
+  function normalizeNameKey(s){
+    return (s||"")
+      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, "") // zero-width / RTL-LTR marks / BOM
+      .replace(/[\u064B-\u065F\u0670]/g, "") // Arabic diacritics (tashkeel)
+      .replace(/ـ/g, "") // tatweel/kashida
+      .trim();
+  }
   list.forEach(p=>{
-    const first = (p.name||"").trim().split(/\s+/)[0];
+    const first = normalizeNameKey((p.name||"").trim().split(/\s+/)[0]);
     if (first) nameCounts[first] = (nameCounts[first]||0)+1;
   });
   const topNames = Object.entries(nameCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
@@ -1498,8 +1505,8 @@ function wireAppEvents(layout){
         const sizerEl = document.getElementById("canvasSizer");
         if (canvasEl) canvasEl.style.transform = "scale("+newZoom+")";
         if (sizerEl){ sizerEl.style.width = (layout.width*newZoom)+"px"; sizerEl.style.height = (layout.height*newZoom)+"px"; }
-        wrap.scrollLeft = contentX*newZoom - midX;
-        wrap.scrollTop = contentY*newZoom - midY;
+        wrap.scrollLeft = Math.max(0, contentX*newZoom - midX);
+        wrap.scrollTop = Math.max(0, contentY*newZoom - midY);
       } else if (e.touches.length===1 && pan.active){
         e.preventDefault();
         const dx = e.touches[0].clientX-pan.lastX, dy = e.touches[0].clientY-pan.lastY;
