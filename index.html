@@ -191,6 +191,7 @@ function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
 const ROW_HEIGHT = 110, COL_WIDTH = 105, NODE_W = 90, NODE_H = 52;
+const PAN_SPEED = 0.4; // fraction of raw finger/mouse movement actually applied to scrolling (lower = slower tree movement)
 
 // ---------- Firebase REST helpers ----------
 async function fbGet(path){ const r = await fetch(DB_URL+"/"+path+".json"); if(!r.ok) throw new Error("fb GET "+r.status); return r.json(); }
@@ -312,8 +313,8 @@ function updateAppTitle(familyName){
 let globalMouseDrag = {active:false, lastX:0, lastY:0, wrap:null};
 window.addEventListener("mousemove", e => {
   if (!globalMouseDrag.active || !globalMouseDrag.wrap) return;
-  globalMouseDrag.wrap.scrollLeft -= (e.clientX-globalMouseDrag.lastX);
-  globalMouseDrag.wrap.scrollTop -= (e.clientY-globalMouseDrag.lastY);
+  globalMouseDrag.wrap.scrollLeft -= (e.clientX-globalMouseDrag.lastX)*PAN_SPEED;
+  globalMouseDrag.wrap.scrollTop -= (e.clientY-globalMouseDrag.lastY)*PAN_SPEED;
   globalMouseDrag.lastX = e.clientX; globalMouseDrag.lastY = e.clientY;
 });
 window.addEventListener("mouseup", () => {
@@ -1510,7 +1511,7 @@ function wireAppEvents(layout){
       } else if (e.touches.length===1 && pan.active){
         e.preventDefault();
         const dx = e.touches[0].clientX-pan.lastX, dy = e.touches[0].clientY-pan.lastY;
-        wrap.scrollLeft -= dx; wrap.scrollTop -= dy;
+        wrap.scrollLeft -= dx*PAN_SPEED; wrap.scrollTop -= dy*PAN_SPEED;
         pan.lastX=e.touches[0].clientX; pan.lastY=e.touches[0].clientY;
         if (Math.hypot(e.touches[0].clientX-pan.startX, e.touches[0].clientY-pan.startY) > 8) pan.moved = true;
       }
