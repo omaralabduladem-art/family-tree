@@ -191,7 +191,7 @@ function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
 const ROW_HEIGHT = 110, COL_WIDTH = 105, NODE_W = 90, NODE_H = 52;
-const PAN_SPEED = 0.4; // fraction of raw finger/mouse movement actually applied to scrolling (lower = slower tree movement)
+const PAN_SPEED = 0.22; // fraction of raw finger/mouse movement actually applied to scrolling (lower = slower tree movement)
 
 // ---------- Firebase REST helpers ----------
 async function fbGet(path){ const r = await fetch(DB_URL+"/"+path+".json"); if(!r.ok) throw new Error("fb GET "+r.status); return r.json(); }
