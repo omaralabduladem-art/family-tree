@@ -315,13 +315,18 @@ function updateAppTitle(familyName){
   updateAppIconAndManifest(full);
 }
 function updateAppIconAndManifest(fullTitle){
-  // Give each tree (distinguished by TREE_ID) its own distinct home-screen icon so they're easy to tell apart once pinned.
   const isSecondTree = !!TREE_ID;
   const bg = isSecondTree ? "#175243" : "#0B2B26";
-  const emoji = isSecondTree ? "\uD83C\uDF3F" : "\uD83C\uDF33"; // 🌿 vs 🌳
+  const emoji = isSecondTree ? "\uD83C\uDF3F" : "\uD83C\uDF33";
+  const line1 = "آل";
+  const line2 = isSecondTree ? "عبدالعظيم" : "أحمد";
+  const line2FontSize = line2.length > 6 ? 13 : 17;
   const iconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
     + "<rect width='100' height='100' fill='"+bg+"'/>"
-    + "<text x='50' y='68' font-size='55' text-anchor='middle'>"+emoji+"</text></svg>";
+    + "<text x='50' y='38' font-size='28' text-anchor='middle'>"+emoji+"</text>"
+    + "<text x='50' y='63' font-size='17' font-family='Tajawal, Arial, sans-serif' font-weight='700' text-anchor='middle' fill='#E9CD8C'>"+line1+"</text>"
+    + "<text x='50' y='84' font-size='"+line2FontSize+"' font-family='Tajawal, Arial, sans-serif' font-weight='700' text-anchor='middle' fill='#E9CD8C'>"+line2+"</text>"
+    + "</svg>";
   const iconDataUri = "data:image/svg+xml," + encodeURIComponent(iconSvg);
   const iconLink = document.getElementById("appleTouchIcon");
   if (iconLink) iconLink.setAttribute("href", iconDataUri);
@@ -390,7 +395,6 @@ function computeLayout(people){
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=> rankOf(a)-rankOf(b)));
   const effectiveGen = computeEffectiveGen(people);
 
-  // Siblings (same parent) are packed close together; different branches get a bit more air.
   const xPos = {}; let cursor = 0; let lastParentId = undefined; const visited = new Set();
   function assignX(id, parentId){
     if (visited.has(id)) return xPos[id];
@@ -434,8 +438,6 @@ function scrollToPerson(id){
     wrap.scrollTop = Math.max(0, targetTop);
   });
 }
-// Zoom while keeping the point under (anchorX, anchorY) — coordinates relative to the wrap viewport — visually fixed.
-// If anchorX/anchorY are omitted, anchors on the current viewport center.
 function applyZoomFactor(factor){
   const wrap = document.getElementById("canvasWrap");
   const oldZoom = state.zoom;
@@ -550,7 +552,7 @@ function renderLogin(){
       + threeTierFields()
       + errBlock()
       + '<button class="ft-btn" id="newPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ والدخول')+'</button>';
-  } else { // login
+  } else {
     html += '<h2>'+loginTitle+'</h2><p>أدخل كلمة مرور المسؤول أو المحرِّر أو المشاهدة.</p>'
       + field("loginPw","كلمة المرور","password")
       + errBlock()
@@ -869,7 +871,7 @@ function renderDetailModal(p, isEditor){
   const motherName = p.motherName || "";
   const husbandName = p.husbandName || "";
   const wifeName = p.wifeName || "";
-  const spouseName = p.spouseName || ""; // legacy field, shown if present on old entries
+  const spouseName = p.spouseName || "";
   let nasabChain = "";
   { let cur = p, guard = 0, parts = [esc(p.name)];
     while (cur.parentId && state.people[cur.parentId] && guard < 100){
@@ -926,9 +928,9 @@ function computeStats(){
   const nameCounts = {};
   function normalizeNameKey(s){
     return (s||"")
-      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, "") // zero-width / RTL-LTR marks / BOM
-      .replace(/[\u064B-\u065F\u0670]/g, "") // Arabic diacritics (tashkeel)
-      .replace(/ـ/g, "") // tatweel/kashida
+      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, "")
+      .replace(/[\u064B-\u065F\u0670]/g, "")
+      .replace(/ـ/g, "")
       .trim();
   }
   list.forEach(p=>{
@@ -1139,7 +1141,7 @@ function renderEditModal(){
   const others = Object.values(state.people).filter(p=>p.id !== state.editId);
   const currentParentId = f.parentId || presetParentId || "";
   const siblingsExcludingSelf = siblingsUnder(state.people, currentParentId, existing ? existing.id : null);
-  let defaultSiblingPos = siblingsExcludingSelf.length; // default: place after everyone (matches old append-to-end behavior)
+  let defaultSiblingPos = siblingsExcludingSelf.length;
   if (existing){
     const allSiblingsIncludingSelf = siblingsUnder(state.people, currentParentId, null);
     const idx = allSiblingsIncludingSelf.findIndex(p=>p.id===existing.id);
@@ -1181,7 +1183,6 @@ function renderEditModal(){
 }
 
 function wireAppEvents(layout){
-  // Fix iOS Safari bug: RTL text inputs don't auto-scroll to keep the caret visible while typing.
   document.querySelectorAll('.ft-field input[dir="rtl"], .ft-field textarea[dir="rtl"], .search input[dir="rtl"]').forEach(el => {
     el.addEventListener('input', () => {
       requestAnimationFrame(() => { el.scrollLeft = -el.scrollWidth; });
@@ -1496,7 +1497,7 @@ function wireAppEvents(layout){
     const parentSelect = document.getElementById("f_parent");
     if (parentSelect) parentSelect.onchange = () => {
       grab();
-      state._editForm.siblingPosition = null; // parent changed, recompute default position among new siblings
+      state._editForm.siblingPosition = null;
       render();
     };
     const photoInput = document.getElementById("f_photo");
@@ -1527,7 +1528,6 @@ function wireAppEvents(layout){
         bio: state._editForm.bio||"", photos: state._editForm.photos||[],
         createdAt: existing?.createdAt || Date.now(),
       };
-      // Apply chosen sibling position: recompute sequential order values for this person and all its siblings.
       const chosenPos = Math.max(0, parseInt(state._editForm.siblingPosition, 10) || 0);
       const siblingsList = siblingsUnder(state.people, person.parentId, person.id);
       const insertPos = Math.min(chosenPos, siblingsList.length);
@@ -1550,7 +1550,6 @@ function wireAppEvents(layout){
     };
   }
 
-  // Pinch / pan
   const wrap = document.getElementById("canvasWrap");
   if (wrap){
     let pinch = {active:false,startDist:0,startZoom:1,midX:0,midY:0};
@@ -1606,7 +1605,6 @@ function wireAppEvents(layout){
       if (suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
     }, true);
 
-    // Desktop mouse: wheel to zoom, click-and-drag to pan
     wrap.addEventListener("wheel", e => {
       e.preventDefault();
       const wrapRect = wrap.getBoundingClientRect();
@@ -1637,7 +1635,6 @@ function wireAppEvents(layout){
       }
     });
 
-    // Auto-fit only on first load, never again afterward (so edits/additions don't reset the user's view)
     requestAnimationFrame(() => {
       const fitKey = layout.width+"x"+layout.height;
       if (Object.keys(state.people).length>0 && state.lastFitKey === null){
@@ -1652,7 +1649,6 @@ function wireAppEvents(layout){
   wirePasswordToggles();
 }
 
-// ---------- Boot ----------
 (async function boot(){
   updateAppIconAndManifest("شجرة العائلة");
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
