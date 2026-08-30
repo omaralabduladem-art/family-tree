@@ -97,6 +97,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
   header{max-width:1300px;}
 }
 
+/* ---- Mobile-friendly enhancements (additive only, does not remove/replace anything above) ---- */
 @media (max-width: 480px){
   h1{font-size:26px;}
   .sub{font-size:12.5px;}
@@ -129,6 +130,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
   .node .name{font-size:11.5px;}
 }
 
+/* Hamburger-style dropdown for secondary header buttons: invisible wrapper on desktop, collapsible on mobile */
 .menu-details{display:contents;}
 .menu-summary{display:none;}
 @media (max-width: 480px){
@@ -155,6 +157,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
   .menu-buttons{display:flex !important;}
 }
 
+/* On-tree kinship picking */
 .kinship-banner{
   position:fixed;top:10px;left:50%;transform:translateX(-50%);
   background:var(--panel);border:1px solid rgba(201,161,90,0.5);color:var(--cream);
@@ -188,12 +191,14 @@ function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
 const ROW_HEIGHT = 110, COL_WIDTH = 105, NODE_W = 90, NODE_H = 52;
-const PAN_SPEED = 0.12;
+const PAN_SPEED = 0.12; // fraction of raw finger/mouse movement actually applied to scrolling (lower = slower tree movement)
 
+// ---------- Firebase REST helpers ----------
 async function fbGet(path){ const r = await fetch(DB_URL+"/"+path+".json"); if(!r.ok) throw new Error("fb GET "+r.status); return r.json(); }
 async function fbSet(path,val){ const r = await fetch(DB_URL+"/"+path+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(val)}); if(!r.ok) throw new Error("fb PUT "+r.status); return r.json(); }
 async function fbDelete(path){ const r = await fetch(DB_URL+"/"+path+".json",{method:"DELETE"}); if(!r.ok) throw new Error("fb DEL "+r.status); }
 
+// ---------- Crypto helpers ----------
 function bufToB64(buf){ const b=new Uint8Array(buf); let s=""; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
 function b64ToBuf(b64){ const s=atob(b64); const b=new Uint8Array(s.length); for(let i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b.buffer; }
 function randomSaltB64(){ return bufToB64(crypto.getRandomValues(new Uint8Array(16)).buffer); }
@@ -260,9 +265,10 @@ async function compressImage(file, maxSize=220, quality=0.72){
   });
 }
 
+// ---------- App state ----------
 const state = {
-  mode: "checking",
-  session: null,
+  mode: "checking", // checking|unsupported|setup|setup-recovery|login|forgot|forgot-newpass|app
+  session: null, // {role, cryptoKey}
   people: {},
   search: "",
   highlightGen: null,
@@ -300,7 +306,7 @@ const state = {
 
 const app = document.getElementById("app");
 let pollTimer = null;
-let gestureActive = false;
+let gestureActive = false; // true while the user is actively dragging/pinching the tree
 function updateAppTitle(familyName){
   const full = familyName ? "شجرة عائلة "+familyName : "شجرة العائلة";
   document.title = full;
@@ -309,33 +315,14 @@ function updateAppTitle(familyName){
   updateAppIconAndManifest(full);
 }
 function updateAppIconAndManifest(fullTitle){
+  // Give each tree (distinguished by TREE_ID) its own distinct home-screen icon so they're easy to tell apart once pinned.
   const isSecondTree = !!TREE_ID;
   const bg = isSecondTree ? "#175243" : "#0B2B26";
-  const emoji = isSecondTree ? "\uD83C\uDF3F" : "\uD83C\uDF33";
-  const line1 = "آل";
-  const line2 = isSecondTree ? "عبدالعظيم" : "أحمد";
-  let iconDataUri;
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = 200; canvas.height = 200;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0,0,200,200);
-    ctx.textAlign = "center";
-    ctx.font = "64px sans-serif";
-    ctx.fillText(emoji, 100, 84);
-    ctx.fillStyle = "#E9CD8C";
-    ctx.direction = "rtl";
-    ctx.font = "bold 36px Arial, sans-serif";
-    ctx.fillText(line1, 100, 130);
-    const line2FontPx = line2.length > 6 ? 27 : 36;
-    ctx.font = "bold "+line2FontPx+"px Arial, sans-serif";
-    ctx.fillText(line2, 100, 172);
-    iconDataUri = canvas.toDataURL("image/png");
-  } catch(_) {
-    const iconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='"+bg+"'/><text x='50' y='68' font-size='55' text-anchor='middle'>"+emoji+"</text></svg>";
-    iconDataUri = "data:image/svg+xml," + encodeURIComponent(iconSvg);
-  }
+  const emoji = isSecondTree ? "\uD83C\uDF3F" : "\uD83C\uDF33"; // 🌿 vs 🌳
+  const iconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+    + "<rect width='100' height='100' fill='"+bg+"'/>"
+    + "<text x='50' y='68' font-size='55' text-anchor='middle'>"+emoji+"</text></svg>";
+  const iconDataUri = "data:image/svg+xml," + encodeURIComponent(iconSvg);
   const iconLink = document.getElementById("appleTouchIcon");
   if (iconLink) iconLink.setAttribute("href", iconDataUri);
 
@@ -347,7 +334,7 @@ function updateAppIconAndManifest(fullTitle){
     display: "standalone",
     background_color: bg,
     theme_color: bg,
-    icons: [{ src: iconDataUri, sizes: "200x200", type: "image/png", purpose: "any maskable" }],
+    icons: [{ src: iconDataUri, sizes: "any", type: "image/svg+xml", purpose: "any maskable" }],
   };
   try {
     const blob = new Blob([JSON.stringify(manifest)], {type:"application/manifest+json"});
@@ -378,6 +365,7 @@ document.addEventListener("click", (e) => {
 
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
+// ---------- Layout ----------
 function computeEffectiveGen(people){
   const childrenMap = {};
   Object.values(people).forEach(p=>{ if(p.parentId && people[p.parentId]) (childrenMap[p.parentId]=childrenMap[p.parentId]||[]).push(p.id); });
@@ -402,6 +390,7 @@ function computeLayout(people){
   Object.values(childrenMap).forEach(arr=>arr.sort((a,b)=> rankOf(a)-rankOf(b)));
   const effectiveGen = computeEffectiveGen(people);
 
+  // Siblings (same parent) are packed close together; different branches get a bit more air.
   const xPos = {}; let cursor = 0; let lastParentId = undefined; const visited = new Set();
   function assignX(id, parentId){
     if (visited.has(id)) return xPos[id];
@@ -445,6 +434,8 @@ function scrollToPerson(id){
     wrap.scrollTop = Math.max(0, targetTop);
   });
 }
+// Zoom while keeping the point under (anchorX, anchorY) — coordinates relative to the wrap viewport — visually fixed.
+// If anchorX/anchorY are omitted, anchors on the current viewport center.
 function applyZoomFactor(factor){
   const wrap = document.getElementById("canvasWrap");
   const oldZoom = state.zoom;
@@ -462,6 +453,7 @@ function applyZoomFactor(factor){
   }
 }
 
+// ---------- Cloud sync ----------
 async function loadAuthRecord(){
   try { return await fbGet(PATH_PREFIX+"auth"); } catch(_) { return null; }
 }
@@ -521,112 +513,7 @@ async function deletePersonCloud(id){
   state.syncing = false; render();
 }
 
-function render(){
-  if (state.mode === "app") { renderApp(); return; }
-  renderLogin();
-}
-  list.forEach(p=>{ const g=Math.max(effectiveGen[p.id]||1,1); positions[p.id] = {x: xPos[p.id]??0, row: g-1, gen: g}; });
-  const width = (cursor+2)*COL_WIDTH + 220;
-  const height = maxGen*ROW_HEIGHT + 140;
-  const genRowStart = {}; for (let g=1; g<=maxGen; g++) genRowStart[g] = g-1;
-  return {positions, width, height, maxGen, genRowStart};
-}
-const pxX = x => 80 + x*COL_WIDTH;
-const pxY = row => 60 + row*ROW_HEIGHT;
-function siblingsUnder(people, parentId, excludeId){
-  const key = parentId || null;
-  return Object.values(people)
-    .filter(p => (p.parentId||null) === key && p.id !== excludeId)
-    .sort((a,b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
-}
-function scrollToPerson(id){
-  requestAnimationFrame(() => {
-    const wrap = document.getElementById("canvasWrap");
-    const node = wrap && document.querySelector('.node[data-id="'+id+'"]');
-    if (!wrap || !node) return;
-    const zoom = state.zoom || 1;
-    const targetLeft = (node.offsetLeft + node.offsetWidth/2) * zoom - wrap.clientWidth/2;
-    const targetTop = (node.offsetTop + node.offsetHeight/2) * zoom - wrap.clientHeight/2;
-    wrap.scrollLeft = Math.max(0, targetLeft);
-    wrap.scrollTop = Math.max(0, targetTop);
-  });
-}
-function applyZoomFactor(factor){
-  const wrap = document.getElementById("canvasWrap");
-  const oldZoom = state.zoom;
-  const newZoom = Math.min(1.6, Math.max(0.08, Math.round(oldZoom*factor*100)/100));
-  if (!wrap){ state.zoom = newZoom; renderApp(); return; }
-  const ax = wrap.clientWidth/2, ay = wrap.clientHeight/2;
-  const contentX = (wrap.scrollLeft + ax) / oldZoom;
-  const contentY = (wrap.scrollTop + ay) / oldZoom;
-  state.zoom = newZoom;
-  renderApp();
-  const newWrap = document.getElementById("canvasWrap");
-  if (newWrap){
-    newWrap.scrollLeft = Math.max(0, contentX*newZoom - ax);
-    newWrap.scrollTop = Math.max(0, contentY*newZoom - ay);
-  }
-}
-
-async function loadAuthRecord(){
-  try { return await fbGet(PATH_PREFIX+"auth"); } catch(_) { return null; }
-}
-async function saveAuthRecord(rec){ await fbSet(PATH_PREFIX+"auth", rec); }
-async function loadMeta(){
-  try { const m = await fbGet(PATH_PREFIX+"meta"); return m || {}; } catch(_) { return {}; }
-}
-async function saveMeta(meta){ await fbSet(PATH_PREFIX+"meta", meta); }
-
-async function loadPeople(){
-  try {
-    const [data, meta] = await Promise.all([fbGet(PATH_PREFIX+"persons"), loadMeta()]);
-    const loaded = {};
-    if (data){
-      for (const cipher of Object.values(data)){
-        try {
-          const plain = await decryptText(state.session.cryptoKey, cipher);
-          const p = JSON.parse(plain);
-          if (!Array.isArray(p.photos)) p.photos = p.photo ? [p.photo] : [];
-          loaded[p.id] = p;
-        } catch(_) {}
-      }
-    }
-    state.people = loaded;
-    if (meta.familyNameEnc){
-      try { state.familyName = await decryptText(state.session.cryptoKey, meta.familyNameEnc); }
-      catch(_) { state.familyName = ""; }
-    } else {
-      state.familyName = meta.familyName || "";
-    }
-    if (state.familyName) updateAppTitle(state.familyName);
-    render();
-  } catch(e){
-    state.err = "تعذّر تحميل البيانات.";
-    render();
-  }
-}
-async function savePersonCloud(person){
-  state.people[person.id] = person;
-  render();
-  state.syncing = true; render();
-  try {
-    const cipher = await encryptText(state.session.cryptoKey, JSON.stringify(person));
-    await fbSet(PATH_PREFIX+"persons/"+person.id, cipher);
-  } catch(e){ state.err = "تعذّر الحفظ في السحابة."; }
-  state.syncing = false; render();
-}
-async function deletePersonCloud(id){
-  delete state.people[id];
-  Object.values(state.people).forEach(p=>{
-    if (p.parentId===id) p.parentId=null;
-  });
-  state.confirmDeleteId = null; state.detailId = null;
-  render();
-  state.syncing = true; render();
-  try { await fbDelete(PATH_PREFIX+"persons/"+id); } catch(e){ state.err = "تعذّر الحذف من السحابة."; }
-  state.syncing = false; render();
-}
-
+// ---------- Render ----------
 function render(){
   if (state.mode === "app") { renderApp(); return; }
   renderLogin();
@@ -663,7 +550,7 @@ function renderLogin(){
       + threeTierFields()
       + errBlock()
       + '<button class="ft-btn" id="newPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ والدخول')+'</button>';
-  } else {
+  } else { // login
     html += '<h2>'+loginTitle+'</h2><p>أدخل كلمة مرور المسؤول أو المحرِّر أو المشاهدة.</p>'
       + field("loginPw","كلمة المرور","password")
       + errBlock()
@@ -844,6 +731,7 @@ function startPolling(){
   }, 7000);
 }
 
+// ---------- Main app render ----------
 function renderApp(){
   const isAdmin = state.session.role === "admin";
   const isEditor = isAdmin || state.session.role === "editor";
@@ -953,6 +841,7 @@ function renderApp(){
   html += '</div>';
   if (peopleCount>0) html += '<div class="zoom"><button id="zoomInBtn">+</button><button id="zoomOutBtn">−</button></div>';
 
+  // Modals
   if (state.detailId && state.people[state.detailId]) html += renderDetailModal(state.people[state.detailId], isEditor);
   if (isEditor && state.editId) html += renderEditModal();
   if (isEditor && state.confirmDeleteId) html += renderConfirmDelete();
@@ -980,7 +869,7 @@ function renderDetailModal(p, isEditor){
   const motherName = p.motherName || "";
   const husbandName = p.husbandName || "";
   const wifeName = p.wifeName || "";
-  const spouseName = p.spouseName || "";
+  const spouseName = p.spouseName || ""; // legacy field, shown if present on old entries
   let nasabChain = "";
   { let cur = p, guard = 0, parts = [esc(p.name)];
     while (cur.parentId && state.people[cur.parentId] && guard < 100){
@@ -1037,9 +926,9 @@ function computeStats(){
   const nameCounts = {};
   function normalizeNameKey(s){
     return (s||"")
-      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, "")
-      .replace(/[\u064B-\u065F\u0670]/g, "")
-      .replace(/ـ/g, "")
+      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, "") // zero-width / RTL-LTR marks / BOM
+      .replace(/[\u064B-\u065F\u0670]/g, "") // Arabic diacritics (tashkeel)
+      .replace(/ـ/g, "") // tatweel/kashida
       .trim();
   }
   list.forEach(p=>{
@@ -1250,7 +1139,7 @@ function renderEditModal(){
   const others = Object.values(state.people).filter(p=>p.id !== state.editId);
   const currentParentId = f.parentId || presetParentId || "";
   const siblingsExcludingSelf = siblingsUnder(state.people, currentParentId, existing ? existing.id : null);
-  let defaultSiblingPos = siblingsExcludingSelf.length;
+  let defaultSiblingPos = siblingsExcludingSelf.length; // default: place after everyone (matches old append-to-end behavior)
   if (existing){
     const allSiblingsIncludingSelf = siblingsUnder(state.people, currentParentId, null);
     const idx = allSiblingsIncludingSelf.findIndex(p=>p.id===existing.id);
@@ -1292,6 +1181,7 @@ function renderEditModal(){
 }
 
 function wireAppEvents(layout){
+  // Fix iOS Safari bug: RTL text inputs don't auto-scroll to keep the caret visible while typing.
   document.querySelectorAll('.ft-field input[dir="rtl"], .ft-field textarea[dir="rtl"], .search input[dir="rtl"]').forEach(el => {
     el.addEventListener('input', () => {
       requestAnimationFrame(() => { el.scrollLeft = -el.scrollWidth; });
@@ -1606,7 +1496,7 @@ function wireAppEvents(layout){
     const parentSelect = document.getElementById("f_parent");
     if (parentSelect) parentSelect.onchange = () => {
       grab();
-      state._editForm.siblingPosition = null;
+      state._editForm.siblingPosition = null; // parent changed, recompute default position among new siblings
       render();
     };
     const photoInput = document.getElementById("f_photo");
@@ -1634,4 +1524,157 @@ function wireAppEvents(layout){
         husbandName: state._editForm.husbandName||"", wifeName: state._editForm.wifeName||"",
         birthYear: state._editForm.birthYear||"", deathYear: state._editForm.deathYear||"",
         deceased: !!(state._editForm.deceased || (state._editForm.deathYear && String(state._editForm.deathYear).trim())),
-        bio: state._editForm.bio||"", photos: state._edi
+        bio: state._editForm.bio||"", photos: state._editForm.photos||[],
+        createdAt: existing?.createdAt || Date.now(),
+      };
+      // Apply chosen sibling position: recompute sequential order values for this person and all its siblings.
+      const chosenPos = Math.max(0, parseInt(state._editForm.siblingPosition, 10) || 0);
+      const siblingsList = siblingsUnder(state.people, person.parentId, person.id);
+      const insertPos = Math.min(chosenPos, siblingsList.length);
+      const orderedWithSelf = [...siblingsList];
+      orderedWithSelf.splice(insertPos, 0, person);
+      const renumbered = orderedWithSelf.map((p,i) => ({id:p.id, order:i}));
+      person.order = renumbered.find(r=>r.id===person.id).order;
+      state.busy = true; state.err=""; render();
+      for (const r of renumbered){
+        if (r.id === person.id) continue;
+        const sib = state.people[r.id];
+        if (sib && sib.order !== r.order){
+          await savePersonCloud({...sib, order: r.order});
+        }
+      }
+      await savePersonCloud(person);
+      state.busy = false; state.editId = null; state._editForm=null; state.detailId=person.id; state.err="";
+      render();
+      scrollToPerson(person.id);
+    };
+  }
+
+  // Pinch / pan
+  const wrap = document.getElementById("canvasWrap");
+  if (wrap){
+    let pinch = {active:false,startDist:0,startZoom:1,midX:0,midY:0};
+    let pan = {active:false,lastX:0,lastY:0,startX:0,startY:0,moved:false};
+    let suppressClick = false;
+    const dist = (a,b) => Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+    const mid = (a,b) => ({x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2});
+    wrap.addEventListener("touchstart", e => {
+      gestureActive = true;
+      if (e.touches.length===2){
+        const wrapRect = wrap.getBoundingClientRect();
+        const m = mid(e.touches[0],e.touches[1]);
+        pinch = {active:true, startDist:dist(e.touches[0],e.touches[1]), startZoom:state.zoom,
+                 midX:m.x-wrapRect.left, midY:m.y-wrapRect.top};
+        pan.active=false;
+      } else if (e.touches.length===1){
+        pan = {active:true, lastX:e.touches[0].clientX, lastY:e.touches[0].clientY,
+               startX:e.touches[0].clientX, startY:e.touches[0].clientY, moved:false};
+      }
+    });
+    wrap.addEventListener("touchmove", e => {
+      if (e.touches.length===2 && pinch.active){
+        e.preventDefault();
+        const wrapRect = wrap.getBoundingClientRect();
+        const m = mid(e.touches[0],e.touches[1]);
+        const midX = m.x-wrapRect.left, midY = m.y-wrapRect.top;
+        const d = dist(e.touches[0],e.touches[1]);
+        const newZoom = Math.min(1.6, Math.max(0.08, pinch.startZoom*(d/pinch.startDist)));
+        const oldZoom = state.zoom;
+        const contentX = (wrap.scrollLeft + midX) / oldZoom;
+        const contentY = (wrap.scrollTop + midY) / oldZoom;
+        state.zoom = newZoom;
+        const canvasEl = document.getElementById("canvas");
+        const sizerEl = document.getElementById("canvasSizer");
+        if (canvasEl) canvasEl.style.transform = "scale("+newZoom+")";
+        if (sizerEl){ sizerEl.style.width = (layout.width*newZoom)+"px"; sizerEl.style.height = (layout.height*newZoom)+"px"; }
+        wrap.scrollLeft = Math.max(0, contentX*newZoom - midX);
+        wrap.scrollTop = Math.max(0, contentY*newZoom - midY);
+      } else if (e.touches.length===1 && pan.active){
+        e.preventDefault();
+        const dx = e.touches[0].clientX-pan.lastX, dy = e.touches[0].clientY-pan.lastY;
+        wrap.scrollLeft -= dx*PAN_SPEED; wrap.scrollTop -= dy*PAN_SPEED;
+        pan.lastX=e.touches[0].clientX; pan.lastY=e.touches[0].clientY;
+        if (Math.hypot(e.touches[0].clientX-pan.startX, e.touches[0].clientY-pan.startY) > 8) pan.moved = true;
+      }
+    });
+    wrap.addEventListener("touchend", e => {
+      if (pan.active && pan.moved) { suppressClick = true; setTimeout(()=>{suppressClick=false;}, 300); }
+      if(e.touches.length<2 && pinch.active){ pinch.active=false; renderApp(); }
+      if(e.touches.length<1){ pan.active=false; gestureActive=false; }
+    });
+    wrap.addEventListener("click", e => {
+      if (suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
+    }, true);
+
+    // Desktop mouse: wheel to zoom, click-and-drag to pan
+    wrap.addEventListener("wheel", e => {
+      e.preventDefault();
+      const wrapRect = wrap.getBoundingClientRect();
+      const ax = e.clientX - wrapRect.left, ay = e.clientY - wrapRect.top;
+      const oldZoom = state.zoom;
+      const newZoom = Math.min(1.6, Math.max(0.08, Math.round(oldZoom*(e.deltaY>0?1/1.08:1.08)*100)/100));
+      const contentX = (wrap.scrollLeft + ax) / oldZoom;
+      const contentY = (wrap.scrollTop + ay) / oldZoom;
+      state.zoom = newZoom;
+      renderApp();
+      const newWrap = document.getElementById("canvasWrap");
+      if (newWrap){
+        newWrap.scrollLeft = Math.max(0, contentX*newZoom - ax);
+        newWrap.scrollTop = Math.max(0, contentY*newZoom - ay);
+      }
+    }, {passive:false});
+    wrap.addEventListener("mousedown", e => {
+      if (e.target.closest(".node")) return;
+      gestureActive = true;
+      globalMouseDrag = {active:true, lastX:e.clientX, lastY:e.clientY, wrap};
+      wrap.style.cursor = "grabbing";
+    });
+    wrap.style.cursor = "grab";
+    wrap.addEventListener("click", e => {
+      if (state.kinshipMode && !e.target.closest(".node")){
+        state.kinshipMode = null; state.kinshipPickA = null; state.kinshipPickB = null;
+        renderApp();
+      }
+    });
+
+    // Auto-fit only on first load, never again afterward (so edits/additions don't reset the user's view)
+    requestAnimationFrame(() => {
+      const fitKey = layout.width+"x"+layout.height;
+      if (Object.keys(state.people).length>0 && state.lastFitKey === null){
+        state.lastFitKey = fitKey;
+        const ww = wrap.clientWidth||360, wh = wrap.clientHeight||500;
+        const fit = Math.min(ww/layout.width, wh/layout.height, 1);
+        state.zoom = Math.max(0.08, Math.round(fit*100)/100);
+        renderApp();
+      }
+    });
+  }
+  wirePasswordToggles();
+}
+
+// ---------- Boot ----------
+(async function boot(){
+  updateAppIconAndManifest("شجرة العائلة");
+  if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
+  try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) updateAppTitle(state.familyName); } catch(_) {}
+  const rec = await loadAuthRecord();
+  if (rec){
+    const remembered = loadRememberedSession();
+    if (remembered && remembered.rawKeyB64){
+      try {
+        const cryptoKey = await importDataKey(remembered.rawKeyB64);
+        state.session = {role: remembered.role, cryptoKey, rawKeyB64: remembered.rawKeyB64};
+        state.mode = "app";
+        render();
+        await loadPeople();
+        startPolling();
+        return;
+      } catch(_) { forgetSession(); }
+    }
+  }
+  state.mode = rec ? "login" : "setup";
+  render();
+})();
+</script>
+</body>
+</html>
