@@ -885,22 +885,12 @@ function renderDetailModal(p, isEditor){
     if (parts.length > 1) nasabChain = parts.join(' ');
   }
   const photos = Array.isArray(p.photos) ? p.photos : (p.photo ? [p.photo] : []);
-  let html = '<div class="overlay" id="detailOverlay"><div class="modal" onclick="event.stopPropagation()">'
-    + '<button class="modal-close" id="closeDetailBtn">✕</button>'
-    + '<div class="detail-avatar">'+(photos[0]?'<img src="'+photos[0]+'">':'👤')+'</div>';
-  if (photos.length > 1){
-    html += '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;">';
-    photos.forEach((ph,i)=>{
-      html += '<img src="'+ph+'" class="gallery-thumb" data-idx="'+i+'" style="width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid rgba(201,161,90,0.4);">';
-    });
-    html += '</div>';
-  }
-  html += '<div class="detail-name">'+esc(p.name)+'</div>'
+ html += '<div class="detail-name">'+esc(p.name)+'</div>'
     + '<div class="detail-meta">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div>'
+    + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
     + '<div class="detail-rel">'
     + (children.length ? '<div>الأولاد: <b>'+children.map(c=>esc(c.name)).join('، ')+'</b></div>' : '')
-    + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
     + (motherName ? '<div>الأم: <b>'+esc(motherName)+'</b></div>' : '')
     + (p.gender==='f' && husbandName ? '<div>❤ الزوج: <b>'+esc(husbandName)+'</b></div>' : '')
     + (p.gender==='m' && wifeName ? '<div>❤ الزوجة: <b>'+esc(wifeName)+'</b></div>' : '')
