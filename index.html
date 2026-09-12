@@ -324,6 +324,7 @@ const state = {
   showQuotesModal: false,
   newQuoteText: "",
   editingQuoteIndex: null,
+  visitorStats: null,
 };
 
 const app = document.getElementById("app");
@@ -512,6 +513,22 @@ async function saveQuotes(list){
     state.currentQuote = list[Math.floor(Math.random()*list.length)];
   }
 }
+async function incrementCounter(path){
+  try {
+    const cur = await fbGet(path);
+    const n = (typeof cur === "number" ? cur : 0) + 1;
+    await fbSet(path, n);
+  } catch(_) {}
+}
+let presenceTimer = null;
+let presenceSessionId = null;
+function startPresenceHeartbeat(){
+  if (!presenceSessionId) presenceSessionId = "s_"+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const send = () => { fbSet(PATH_PREFIX+"presence/"+presenceSessionId, Date.now()).catch(()=>{}); };
+  send();
+  if (presenceTimer) clearInterval(presenceTimer);
+  presenceTimer = setInterval(send, 20000);
+}
 
 async function loadPeople(){
   try {
@@ -644,6 +661,7 @@ function wireLoginEvents(){
       rememberSession("admin", state.pendingDataKeyB64);
     state.mode = "app";
     render();
+    incrementCounter(PATH_PREFIX+"stats/totalLogins");
     await loadPeople();
     startPolling();
   };
@@ -713,6 +731,7 @@ function wireLoginEvents(){
       rememberSession(role, rawKeyB64);
       state.mode = "app";
       render();
+      incrementCounter(PATH_PREFIX+"stats/totalLogins");
       await loadPeople();
       startPolling();
     } catch(e){ state.err = "كلمة المرور غير صحيحة."; }
@@ -758,6 +777,7 @@ function wireLoginEvents(){
       rememberSession("admin", state.pendingDataKeyB64);
       state.mode = "app";
       render();
+      incrementCounter(PATH_PREFIX+"stats/totalLogins");
       await loadPeople();
       startPolling();
     } catch(e){ state.err = "تعذّر الحفظ."; }
@@ -780,6 +800,7 @@ function startPolling(){
   pollTimer = setInterval(() => {
     if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !gestureActive) loadPeople();
   }, 7000);
+  startPresenceHeartbeat();
 }
 
 // ---------- Main app render ----------
@@ -1081,6 +1102,18 @@ function renderStatsModal(){
       html += '</div>';
     }
   }
+  if (state.session && state.session.role === "admin"){
+    html += '<div style="font-weight:700;color:var(--gold-light);margin:18px 0 8px;font-size:14px;">إحصائيات الزيارات</div>';
+    if (!state.visitorStats){
+      html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+    } else {
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'
+        + statCard("👁️ عدد الفتحات", state.visitorStats.opens)
+        + statCard("🔑 مرات الدخول", state.visitorStats.logins)
+        + statCard("🟢 متصل الآن", state.visitorStats.online)
+        + '</div>';
+    }
+  }
   html += '</div></div>';
   return html;
 }
@@ -1310,7 +1343,32 @@ function wireAppEvents(layout){
     }
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
-  if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
+  if (showStatsBtn) showStatsBtn.onclick = () => {
+    state.showStats = true; state.visitorStats = null; render();
+    if (state.session && state.session.role === "admin"){
+      (async () => {
+        try {
+          const [opens, logins, presence] = await Promise.all([
+            fbGet(PATH_PREFIX+"stats/totalOpens"),
+            fbGet(PATH_PREFIX+"stats/totalLogins"),
+            fbGet(PATH_PREFIX+"presence"),
+          ]);
+          const now = Date.now();
+          let online = 0;
+          const stale = [];
+          if (presence){
+            Object.entries(presence).forEach(([sid, ts]) => {
+              if (now - ts < 45000) online++;
+              else if (now - ts > 300000) stale.push(sid);
+            });
+          }
+          state.visitorStats = { opens: opens||0, logins: logins||0, online };
+          stale.forEach(sid => { fbDelete(PATH_PREFIX+"presence/"+sid).catch(()=>{}); });
+        } catch(_) { state.visitorStats = { opens: 0, logins: 0, online: 0 }; }
+        if (state.showStats) render();
+      })();
+    }
+  };
   const statsOverlay = document.getElementById("statsOverlay");
   if (statsOverlay){
     statsOverlay.onclick = () => { state.showStats=false; render(); };
@@ -1791,6 +1849,7 @@ function wireAppEvents(layout){
 // ---------- Boot ----------
 (async function boot(){
   updateAppIconAndManifest("شجرة العائلة");
+  incrementCounter(PATH_PREFIX+"stats/totalOpens");
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
   try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) updateAppTitle(state.familyName); } catch(_) {}
   const rec = await loadAuthRecord();
@@ -1802,6 +1861,7 @@ function wireAppEvents(layout){
         state.session = {role: remembered.role, cryptoKey, rawKeyB64: remembered.rawKeyB64};
         state.mode = "app";
         render();
+        incrementCounter(PATH_PREFIX+"stats/totalLogins");
         await loadPeople();
         startPolling();
         return;
