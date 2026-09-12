@@ -172,7 +172,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 }
 .node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
 .node.kinship-dim{opacity:0.15;}
-.node.highlighted{border-color:var(--danger)!important;background:linear-gradient(160deg, rgba(196,104,95,0.55), rgba(23,82,67,0.6))!important;box-shadow:0 0 10px 2px rgba(196,104,95,0.5);}
+.node.highlighted{border-color:#FF3B30!important;background:linear-gradient(160deg, rgba(255,59,48,0.8), rgba(120,20,20,0.7))!important;box-shadow:0 0 16px 4px rgba(255,59,48,0.7);}
 .quote-box{position:fixed;top:10px;right:10px;max-width:220px;background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--cream-dim);z-index:25;box-shadow:0 6px 18px rgba(0,0,0,0.35);line-height:1.6;}
 @media (max-width:480px){.quote-box{max-width:150px;font-size:11px;padding:8px 10px;top:8px;right:8px;}}
 </style>
@@ -323,6 +323,7 @@ const state = {
   currentQuote: "",
   showQuotesModal: false,
   newQuoteText: "",
+  editingQuoteIndex: null,
 };
 
 const app = document.getElementById("app");
@@ -1121,13 +1122,15 @@ function renderQuotesModal(){
     + '<button class="modal-close" id="closeQuotesBtn">✕</button>'
     + '<div class="detail-name" style="margin-bottom:6px;">💬 إدارة العبارات</div>'
     + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">تظهر عبارة عشوائية من هذه القائمة لكل زائر عند فتح الموقع.</p>'
-    + '<div class="ft-field"><label>عبارة جديدة</label><textarea id="newQuoteInput" dir="rtl">'+esc(state.newQuoteText||"")+'</textarea></div>'
-    + '<button class="ft-btn" id="addQuoteBtn" style="width:100%;justify-content:center;margin-bottom:14px;">➕ إضافة</button>';
+    + '<div class="ft-field"><label>'+(state.editingQuoteIndex!==null?"تعديل العبارة":"عبارة جديدة")+'</label><textarea id="newQuoteInput" dir="rtl">'+esc(state.newQuoteText||"")+'</textarea></div>'
+    + '<button class="ft-btn" id="addQuoteBtn" style="width:100%;justify-content:center;margin-bottom:8px;">'+(state.editingQuoteIndex!==null?"💾 حفظ التعديل":"➕ إضافة")+'</button>'
+    + (state.editingQuoteIndex!==null ? '<button class="ft-btn secondary" id="cancelEditQuoteBtn" style="width:100%;justify-content:center;margin-bottom:14px;">إلغاء التعديل</button>' : "");
   if (state.quotes.length){
     html += '<div style="display:flex;flex-direction:column;gap:8px;">';
     state.quotes.forEach((q,i) => {
       html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:8px 10px;">'
         + '<div style="flex:1;font-size:13px;">'+esc(q)+'</div>'
+        + '<button class="ft-btn secondary" style="padding:4px 10px;font-size:12px;" id="editQuote_'+i+'">✏️ تعديل</button>'
         + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delQuote_'+i+'">حذف</button>'
         + '</div>';
     });
@@ -1399,19 +1402,31 @@ function wireAppEvents(layout){
       if (!text.trim()) return;
       state.busy = true; render();
       try {
-        const list = [...state.quotes, text.trim()];
+        let list;
+        if (state.editingQuoteIndex !== null){
+          list = [...state.quotes];
+          list[state.editingQuoteIndex] = text.trim();
+        } else {
+          list = [...state.quotes, text.trim()];
+        }
         await saveQuotes(list);
         state.newQuoteText = "";
+        state.editingQuoteIndex = null;
       } catch(e){ state.err = "تعذّر حفظ العبارة."; }
       state.busy = false; render();
     };
+    const cancelEditQuoteBtn = document.getElementById("cancelEditQuoteBtn");
+    if (cancelEditQuoteBtn) cancelEditQuoteBtn.onclick = () => { state.newQuoteText = ""; state.editingQuoteIndex = null; render(); };
     state.quotes.forEach((q,i) => {
+      const eq = document.getElementById("editQuote_"+i);
+      if (eq) eq.onclick = () => { state.newQuoteText = state.quotes[i]; state.editingQuoteIndex = i; render(); };
       const dq = document.getElementById("delQuote_"+i);
       if (dq) dq.onclick = async () => {
         state.busy = true; render();
         try {
           const list = state.quotes.filter((_,idx)=>idx!==i);
           await saveQuotes(list);
+          if (state.editingQuoteIndex === i){ state.newQuoteText = ""; state.editingQuoteIndex = null; }
         } catch(e){ state.err = "تعذّر الحذف."; }
         state.busy = false; render();
       };
