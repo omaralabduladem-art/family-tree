@@ -172,6 +172,9 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 }
 .node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
 .node.kinship-dim{opacity:0.15;}
+.node.highlighted{border-color:var(--danger)!important;background:linear-gradient(160deg, rgba(196,104,95,0.55), rgba(23,82,67,0.6))!important;box-shadow:0 0 10px 2px rgba(196,104,95,0.5);}
+.quote-box{position:fixed;top:10px;right:10px;max-width:220px;background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--cream-dim);z-index:25;box-shadow:0 6px 18px rgba(0,0,0,0.35);line-height:1.6;}
+@media (max-width:480px){.quote-box{max-width:150px;font-size:11px;padding:8px 10px;top:8px;right:8px;}}
 </style>
 </head>
 <body>
@@ -303,6 +306,10 @@ const state = {
   showImportPasteModal: false,
   exportJson: "",
   copiedFlag: false,
+  quotes: [],
+  currentQuote: "",
+  showQuotesModal: false,
+  newQuoteText: "",
 };
 
 const app = document.getElementById("app");
@@ -467,6 +474,27 @@ async function loadMeta(){
   try { const m = await fbGet(PATH_PREFIX+"meta"); return m || {}; } catch(_) { return {}; }
 }
 async function saveMeta(meta){ await fbSet(PATH_PREFIX+"meta", meta); }
+async function loadQuotes(){
+  try {
+    const meta = await loadMeta();
+    if (meta.quotesEnc){
+      try {
+        const raw = await decryptText(state.session.cryptoKey, meta.quotesEnc);
+        state.quotes = JSON.parse(raw) || [];
+      } catch(_) { state.quotes = []; }
+    } else { state.quotes = []; }
+    if (state.quotes.length && !state.currentQuote){
+      state.currentQuote = state.quotes[Math.floor(Math.random()*state.quotes.length)];
+    }
+  } catch(_) {}
+}
+async function saveQuotes(list){
+  const meta = await loadMeta();
+  const quotesEnc = await encryptText(state.session.cryptoKey, JSON.stringify(list));
+  const cleanMeta = {...meta};
+  await saveMeta({...cleanMeta, quotesEnc});
+  state.quotes = list;
+}
 
 async function loadPeople(){
   try {
@@ -490,6 +518,7 @@ async function loadPeople(){
       state.familyName = meta.familyName || "";
     }
     if (state.familyName) updateAppTitle(state.familyName);
+    await loadQuotes();
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -759,6 +788,7 @@ function renderApp(){
 
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
+  if (state.currentQuote) html += '<div class="quote-box">'+esc(state.currentQuote)+'</div>';
   if (state.kinshipMode === "picking" || state.kinshipMode === "result"){
     let bannerText = "";
     if (state.kinshipMode === "picking"){
@@ -791,6 +821,7 @@ function renderApp(){
     + (isAdmin ? '<button id="changePwBtn">🔑 تغيير كلمات المرور</button>' : '')
     + (isAdmin ? '<button id="showRecoveryBtn">🔐 توليد رمز استرداد جديد</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
+    + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
     + (isAdmin ? '<button id="exportDataBtn">💾 نسخة احتياطية</button>' : '')
     + (isAdmin ? '<button id="importDataBtn">📥 استيراد ملف</button>' : '')
     + (isAdmin ? '<button id="importPasteBtn">📋 استيراد بلصق نص</button>' : '')
@@ -834,11 +865,12 @@ function renderApp(){
       const pos = layout.positions[p.id]; if (!pos) return;
       const match = (state.search.trim() && p.name && p.name.includes(state.search.trim())) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deceased || (p.deathYear && String(p.deathYear).trim());
+      const isHighlighted = !!p.highlighted;
       const isPicked = (state.kinshipPickA===p.id || state.kinshipPickB===p.id);
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
-      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
+      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
         + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div></div>';
     });
     html += '</div></div>';
@@ -854,6 +886,7 @@ function renderApp(){
   if (state.showKinship) html += renderKinshipModal();
   if (isAdmin && state.showChangePw) html += renderChangePwModal();
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
+  if (isAdmin && state.showQuotesModal) html += renderQuotesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
   if (isAdmin && state.showExportModal) html += renderExportModal();
@@ -897,6 +930,7 @@ function renderDetailModal(p, isEditor){
   }
  html += '<div class="detail-name">'+esc(p.name)+'</div>'
     + '<div class="detail-meta">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div>'
+    + '<div class="detail-meta" style="margin-top:2px;">'+esc(genLabel(genNum))+'</div>'
     + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
     + '<div class="detail-rel">'
@@ -910,6 +944,7 @@ function renderDetailModal(p, isEditor){
     html += '<div class="modal-actions">'
       + '<button class="ft-btn" id="addChildBtn" data-id="'+p.id+'">➕ إضافة ابن/ابنة</button>'
       + '<button class="ft-btn secondary" id="editPersonBtn" data-id="'+p.id+'">تعديل</button>'
+      + '<button class="ft-btn secondary" id="toggleHighlightBtn" data-id="'+p.id+'">'+(p.highlighted?'إلغاء التمييز':'🔴 تمييز بالأحمر')+'</button>'
       + '<button class="ft-btn danger" id="deletePersonBtn" data-id="'+p.id+'">🗑 حذف</button>'
       + '</div>';
   }
@@ -1061,6 +1096,29 @@ function renderRecoveryModal(){
       : '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:16px;">هذا يولّد رمز استرداد جديد يحل محل أي رمز قديم. استخدمه لاحقاً لو نسيت كل كلمات المرور.</p>'
         + '<button class="ft-btn" id="generateRecoveryBtn" style="width:100%;justify-content:center;">توليد رمز جديد</button>')
     + '</div></div>';
+}
+
+function renderQuotesModal(){
+  let html = '<div class="overlay" id="quotesOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeQuotesBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">💬 إدارة العبارات</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">تظهر عبارة عشوائية من هذه القائمة لكل زائر عند فتح الموقع.</p>'
+    + '<div class="ft-field"><label>عبارة جديدة</label><textarea id="newQuoteInput" dir="rtl">'+esc(state.newQuoteText||"")+'</textarea></div>'
+    + '<button class="ft-btn" id="addQuoteBtn" style="width:100%;justify-content:center;margin-bottom:14px;">➕ إضافة</button>';
+  if (state.quotes.length){
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    state.quotes.forEach((q,i) => {
+      html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:8px 10px;">'
+        + '<div style="flex:1;font-size:13px;">'+esc(q)+'</div>'
+        + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delQuote_'+i+'">حذف</button>'
+        + '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا توجد عبارات بعد.</div>';
+  }
+  html += errBlock() + '</div></div>';
+  return html;
 }
 
 function renderChangePwModal(){
@@ -1309,6 +1367,36 @@ function wireAppEvents(layout){
 
   const changePwBtn = document.getElementById("changePwBtn");
   if (changePwBtn) changePwBtn.onclick = () => { state.showChangePw = true; state.err=""; render(); };
+  const manageQuotesBtn = document.getElementById("manageQuotesBtn");
+  if (manageQuotesBtn) manageQuotesBtn.onclick = () => { state.showQuotesModal = true; state.err=""; render(); };
+  const quotesOverlay = document.getElementById("quotesOverlay");
+  if (quotesOverlay){
+    quotesOverlay.onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
+    document.getElementById("closeQuotesBtn").onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
+    const addQuoteBtn = document.getElementById("addQuoteBtn");
+    if (addQuoteBtn) addQuoteBtn.onclick = async () => {
+      const text = val("newQuoteInput");
+      if (!text.trim()) return;
+      state.busy = true; render();
+      try {
+        const list = [...state.quotes, text.trim()];
+        await saveQuotes(list);
+        state.newQuoteText = "";
+      } catch(e){ state.err = "تعذّر حفظ العبارة."; }
+      state.busy = false; render();
+    };
+    state.quotes.forEach((q,i) => {
+      const dq = document.getElementById("delQuote_"+i);
+      if (dq) dq.onclick = async () => {
+        state.busy = true; render();
+        try {
+          const list = state.quotes.filter((_,idx)=>idx!==i);
+          await saveQuotes(list);
+        } catch(e){ state.err = "تعذّر الحذف."; }
+        state.busy = false; render();
+      };
+    });
+  }
 
   const exportDataBtn = document.getElementById("exportDataBtn");
   if (exportDataBtn) exportDataBtn.onclick = () => {
@@ -1468,6 +1556,14 @@ function wireAppEvents(layout){
     if (editBtn) editBtn.onclick = () => { state.editId = editBtn.dataset.id; state._editForm=null; render(); };
     const delBtn = document.getElementById("deletePersonBtn");
     if (delBtn) delBtn.onclick = () => { state.confirmDeleteId = delBtn.dataset.id; render(); };
+    const toggleHighlightBtn = document.getElementById("toggleHighlightBtn");
+    if (toggleHighlightBtn) toggleHighlightBtn.onclick = async () => {
+      const id = toggleHighlightBtn.dataset.id;
+      const person = state.people[id];
+      if (!person) return;
+      await savePersonCloud({...person, highlighted: !person.highlighted});
+      render();
+    };
     document.querySelectorAll(".gallery-thumb").forEach(t => t.onclick = (e) => {
       e.stopPropagation();
       const avatar = document.querySelector(".detail-avatar");
