@@ -173,7 +173,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
 .node.kinship-dim{opacity:0.15;}
 .node.highlighted{border-color:#FF3B30!important;background:linear-gradient(160deg, rgba(255,59,48,0.8), rgba(120,20,20,0.7))!important;box-shadow:0 0 16px 4px rgba(255,59,48,0.7);}
-.quote-box{max-width:460px;margin:12px auto 0;background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:12px;padding:10px 20px;font-family:'Amiri',serif;font-style:italic;font-weight:700;font-size:16px;letter-spacing:0.2px;color:var(--gold-light);text-align:center;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,0.3);}
+.quote-box{max-width:460px;margin:12px auto 0;background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:12px;padding:10px 20px;font-family:'Amiri',serif;font-style:normal;font-weight:700;font-size:16px;letter-spacing:0.2px;color:var(--gold-light);text-align:center;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,0.3);}
 @media (max-width:480px){.quote-box{font-size:14px;padding:8px 14px;max-width:92%;}}
 </style>
 </head>
@@ -798,7 +798,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !gestureActive) loadPeople();
   }, 7000);
   startPresenceHeartbeat();
 }
@@ -932,11 +932,17 @@ function renderApp(){
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
+  const prevModal = document.querySelector(".overlay .modal");
+  const prevModalScroll = prevModal ? prevModal.scrollTop : null;
   app.innerHTML = html;
   wireAppEvents(layout);
   if (prevScroll){
     const newWrap = document.getElementById("canvasWrap");
     if (newWrap){ newWrap.scrollLeft = prevScroll.left; newWrap.scrollTop = prevScroll.top; }
+  }
+  if (prevModalScroll !== null){
+    const newModal = document.querySelector(".overlay .modal");
+    if (newModal) newModal.scrollTop = prevModalScroll;
   }
 }
 
