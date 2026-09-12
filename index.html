@@ -240,7 +240,20 @@ function generateRecoveryCode(){
   const hex = Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();
   return hex.match(/.{1,4}/g).join("-");
 }
-function genLabel(n){ return n===1 ? "الجيل الأول — الجد الأكبر" : "الجيل "+n; }
+function ordinalAr(n){
+  const ones = ["","الأول","الثاني","الثالث","الرابع","الخامس","السادس","السابع","الثامن","التاسع"];
+  const teens = ["العاشر","الحادي عشر","الثاني عشر","الثالث عشر","الرابع عشر","الخامس عشر","السادس عشر","السابع عشر","الثامن عشر","التاسع عشر"];
+  const tensWords = ["","","العشرون","الثلاثون","الأربعون","الخمسون"];
+  if (n>=1 && n<=9) return ones[n];
+  if (n>=10 && n<=19) return teens[n-10];
+  if (n>=20 && n<=59){
+    const tens = Math.floor(n/10), rem = n%10;
+    if (rem===0) return tensWords[tens];
+    return ones[rem]+" و"+tensWords[tens];
+  }
+  return "رقم "+n;
+}
+function genLabel(n){ return n===1 ? "الجيل الأول — الجد الأكبر" : "الجيل "+ordinalAr(n); }
 function uid(){ return "p_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
 function elbowPath(x1,y1,x2,y2,r){
   if (Math.abs(x1-x2) < 1) return "M "+x1+" "+y1+" L "+x2+" "+y2;
@@ -494,6 +507,9 @@ async function saveQuotes(list){
   const cleanMeta = {...meta};
   await saveMeta({...cleanMeta, quotesEnc});
   state.quotes = list;
+  if (!state.currentQuote && list.length){
+    state.currentQuote = list[Math.floor(Math.random()*list.length)];
+  }
 }
 
 async function loadPeople(){
@@ -761,7 +777,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !gestureActive) loadPeople();
   }, 7000);
 }
 
@@ -1375,6 +1391,8 @@ function wireAppEvents(layout){
   if (quotesOverlay){
     quotesOverlay.onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
     document.getElementById("closeQuotesBtn").onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
+    const newQuoteInputEl = document.getElementById("newQuoteInput");
+    if (newQuoteInputEl) newQuoteInputEl.oninput = e => { state.newQuoteText = e.target.value; };
     const addQuoteBtn = document.getElementById("addQuoteBtn");
     if (addQuoteBtn) addQuoteBtn.onclick = async () => {
       const text = val("newQuoteInput");
