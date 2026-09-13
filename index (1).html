@@ -172,9 +172,9 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 }
 .node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
 .node.kinship-dim{opacity:0.15;}
-.node.highlighted{border-color:var(--danger)!important;background:linear-gradient(160deg, rgba(196,104,95,0.55), rgba(23,82,67,0.6))!important;box-shadow:0 0 10px 2px rgba(196,104,95,0.5);}
-.quote-box{position:fixed;top:10px;right:10px;max-width:220px;background:var(--panel);border:1px solid rgba(201,161,90,0.35);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--cream-dim);z-index:25;box-shadow:0 6px 18px rgba(0,0,0,0.35);line-height:1.6;}
-@media (max-width:480px){.quote-box{max-width:150px;font-size:11px;padding:8px 10px;top:8px;right:8px;}}
+.node.highlighted{border-color:#FF3B30!important;background:linear-gradient(160deg, rgba(255,59,48,0.8), rgba(120,20,20,0.7))!important;box-shadow:0 0 16px 4px rgba(255,59,48,0.7);}
+.quote-box{max-width:460px;margin:12px auto 0;background:var(--gold);border:1px solid rgba(11,43,38,0.3);border-radius:12px;padding:10px 20px;font-family:'Tajawal',sans-serif;font-weight:700;font-size:15.5px;letter-spacing:0.2px;color:var(--bg);text-align:center;line-height:1.6;box-shadow:0 6px 18px rgba(0,0,0,0.3);}
+@media (max-width:480px){.quote-box{font-size:14px;padding:8px 14px;max-width:92%;}}
 </style>
 </head>
 <body>
@@ -185,8 +185,8 @@ const DB_URL = "https://family-tree-9007d-default-rtdb.asia-southeast1.firebased
 const TREE_ID = new URLSearchParams(window.location.search).get("tree") || "";
 const PATH_PREFIX = TREE_ID ? "trees/"+encodeURIComponent(TREE_ID)+"/" : "";
 const REMEMBER_KEY = "ft_remember_"+(TREE_ID||"default");
-function rememberSession(role, rawKeyB64){
-  try { localStorage.setItem(REMEMBER_KEY, JSON.stringify({role, rawKeyB64})); } catch(_) {}
+function rememberSession(role, rawKeyB64, emailIdentity){
+  try { localStorage.setItem(REMEMBER_KEY, JSON.stringify({role, rawKeyB64, emailIdentity: emailIdentity||null})); } catch(_) {}
 }
 function forgetSession(){
   try { localStorage.removeItem(REMEMBER_KEY); } catch(_) {}
@@ -240,7 +240,31 @@ function generateRecoveryCode(){
   const hex = Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();
   return hex.match(/.{1,4}/g).join("-");
 }
-function genLabel(n){ return n===1 ? "الجيل الأول — الجد الأكبر" : "الجيل "+n; }
+function genTempCode(){
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  const hex = Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("").toUpperCase();
+  return hex.match(/.{1,4}/g).join("-");
+}
+function emailKeyOf(email){
+  return btoa(unescape(encodeURIComponent(email.trim().toLowerCase()))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+}
+function isValidEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+function ordinalAr(n){
+  const ones = ["","الأول","الثاني","الثالث","الرابع","الخامس","السادس","السابع","الثامن","التاسع"];
+  const teens = ["العاشر","الحادي عشر","الثاني عشر","الثالث عشر","الرابع عشر","الخامس عشر","السادس عشر","السابع عشر","الثامن عشر","التاسع عشر"];
+  const tensWords = ["","","العشرون","الثلاثون","الأربعون","الخمسون"];
+  if (n>=1 && n<=9) return ones[n];
+  if (n>=10 && n<=19) return teens[n-10];
+  if (n>=20 && n<=59){
+    const tens = Math.floor(n/10), rem = n%10;
+    if (rem===0) return tensWords[tens];
+    return ones[rem]+" و"+tensWords[tens];
+  }
+  return "رقم "+n;
+}
+function genLabel(n){ return n===1 ? "الجيل الأول — الجد الأكبر" : "الجيل "+ordinalAr(n); }
 function uid(){ return "p_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
 function elbowPath(x1,y1,x2,y2,r){
   if (Math.abs(x1-x2) < 1) return "M "+x1+" "+y1+" L "+x2+" "+y2;
@@ -310,6 +334,23 @@ const state = {
   currentQuote: "",
   showQuotesModal: false,
   newQuoteText: "",
+  editingQuoteIndex: null,
+  visitorStats: null,
+  pendingEmailKey: null,
+  pendingEmailAddr: "",
+  pendingRawKeyB64: null,
+  showContactModal: false,
+  contactSent: false,
+  showMessagesModal: false,
+  messagesList: null,
+  showMyMessagesModal: false,
+  myMessagesList: null,
+  replyOpenId: null,
+  showEmailUsersModal: false,
+  emailUsersList: null,
+  newEmailTempCode: "",
+  showCheckMessagesModal: false,
+  checkMessagesList: null,
 };
 
 const app = document.getElementById("app");
@@ -494,6 +535,41 @@ async function saveQuotes(list){
   const cleanMeta = {...meta};
   await saveMeta({...cleanMeta, quotesEnc});
   state.quotes = list;
+  if (!state.currentQuote && list.length){
+    state.currentQuote = list[Math.floor(Math.random()*list.length)];
+  }
+}
+async function fetchAndDecryptMessages(){
+  const raw = await fbGet(PATH_PREFIX+"messages");
+  const list = [];
+  if (raw){
+    for (const [id, cipher] of Object.entries(raw)){
+      try {
+        const plain = await decryptText(state.session.cryptoKey, cipher);
+        const obj = JSON.parse(plain);
+        obj.id = id;
+        list.push(obj);
+      } catch(_) {}
+    }
+  }
+  list.sort((a,b) => (b.sentAt||0) - (a.sentAt||0));
+  return list;
+}
+async function incrementCounter(path){
+  try {
+    const cur = await fbGet(path);
+    const n = (typeof cur === "number" ? cur : 0) + 1;
+    await fbSet(path, n);
+  } catch(_) {}
+}
+let presenceTimer = null;
+let presenceSessionId = null;
+function startPresenceHeartbeat(){
+  if (!presenceSessionId) presenceSessionId = "s_"+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const send = () => { fbSet(PATH_PREFIX+"presence/"+presenceSessionId, Date.now()).catch(()=>{}); };
+  send();
+  if (presenceTimer) clearInterval(presenceTimer);
+  presenceTimer = setInterval(send, 20000);
 }
 
 async function loadPeople(){
@@ -584,12 +660,26 @@ function renderLogin(){
       + threeTierFields()
       + errBlock()
       + '<button class="ft-btn" id="newPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ والدخول')+'</button>';
+  } else if (state.mode === "email-login"){
+    html += '<h2>الدخول بالبريد الإلكتروني</h2><p>أدخل بريدك وكلمة المرور (أو الرمز المؤقت الذي أرسله لك المسؤول).</p>'
+      + field("emailLoginEmail","البريد الإلكتروني","text","example@email.com")
+      + field("emailLoginCode","كلمة المرور / الرمز المؤقت","password")
+      + errBlock()
+      + '<button class="ft-btn" id="emailLoginSubmitBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ التحقق...':'دخول')+'</button>'
+      + '<button class="ft-btn secondary" id="backToNormalLoginBtn" style="width:100%;justify-content:center;margin-top:8px;">رجوع</button>';
+  } else if (state.mode === "email-setpass"){
+    html += '<h2>اختر كلمة مرور خاصة بك</h2><p>هذا أول دخول لك بالبريد '+esc(state.pendingEmailAddr)+'. اختر كلمة مرور شخصية تستخدمها من الآن فصاعداً بدل الرمز المؤقت — محد ثاني يعرفها إلا انت.</p>'
+      + field("emailNewPw","كلمة المرور الجديدة","password")
+      + field("emailNewPw2","تأكيد كلمة المرور","password")
+      + errBlock()
+      + '<button class="ft-btn" id="emailSetPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ ودخول')+'</button>';
   } else { // login
     html += '<h2>'+loginTitle+'</h2><p>أدخل كلمة مرور المسؤول أو المحرِّر أو المشاهدة.</p>'
       + field("loginPw","كلمة المرور","password")
       + errBlock()
       + '<button class="ft-btn" id="loginBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ التحقق...':'دخول')+'</button>'
-      + '<button class="ft-btn secondary" id="forgotBtn" style="width:100%;justify-content:center;margin-top:8px;">نسيت كلمات المرور؟</button>';
+      + '<button class="ft-btn secondary" id="forgotBtn" style="width:100%;justify-content:center;margin-top:8px;">نسيت كلمات المرور؟</button>'
+      + '<button class="ft-btn secondary" id="emailLoginLinkBtn" style="width:100%;justify-content:center;margin-top:8px;">📧 الدخول ببريدك الإلكتروني</button>';
   }
   html += '</div></div>';
   app.innerHTML = html;
@@ -627,6 +717,7 @@ function wireLoginEvents(){
       rememberSession("admin", state.pendingDataKeyB64);
     state.mode = "app";
     render();
+    incrementCounter(PATH_PREFIX+"stats/totalLogins");
     await loadPeople();
     startPolling();
   };
@@ -696,6 +787,7 @@ function wireLoginEvents(){
       rememberSession(role, rawKeyB64);
       state.mode = "app";
       render();
+      incrementCounter(PATH_PREFIX+"stats/totalLogins");
       await loadPeople();
       startPolling();
     } catch(e){ state.err = "كلمة المرور غير صحيحة."; }
@@ -705,6 +797,67 @@ function wireLoginEvents(){
   if (forgotBtn) forgotBtn.onclick = () => { state.mode="forgot"; state.err=""; render(); };
   const backBtn = document.getElementById("backToLoginBtn");
   if (backBtn) backBtn.onclick = () => { state.mode="login"; state.err=""; render(); };
+  const emailLoginLinkBtn = document.getElementById("emailLoginLinkBtn");
+  if (emailLoginLinkBtn) emailLoginLinkBtn.onclick = () => { state.mode="email-login"; state.err=""; render(); };
+  const backToNormalLoginBtn = document.getElementById("backToNormalLoginBtn");
+  if (backToNormalLoginBtn) backToNormalLoginBtn.onclick = () => { state.mode="login"; state.err=""; render(); };
+  const emailLoginSubmitBtn = document.getElementById("emailLoginSubmitBtn");
+  if (emailLoginSubmitBtn) emailLoginSubmitBtn.onclick = async () => {
+    const email = val("emailLoginEmail");
+    const code = val("emailLoginCode");
+    state.err = "";
+    if (!isValidEmail(email)){ state.err = "أدخل بريداً إلكترونياً صحيحاً."; render(); return; }
+    if (!code){ state.err = "أدخل كلمة المرور أو الرمز المؤقت."; render(); return; }
+    state.busy = true; render();
+    try {
+      const key = emailKeyOf(email);
+      const rec = await fbGet(PATH_PREFIX+"emailUsers/"+key);
+      if (!rec) throw new Error("not found");
+      const k = await deriveKey(code, rec.salt);
+      const rawKeyB64 = await decryptText(k, rec.wrap);
+      if (!rec.passwordSet){
+        state.pendingEmailKey = key;
+        state.pendingEmailAddr = rec.email || email;
+        state.pendingRawKeyB64 = rawKeyB64;
+        state.mode = "email-setpass";
+        state.err = "";
+      } else {
+        const cryptoKey = await importDataKey(rawKeyB64);
+        state.session = {role:"viewer", cryptoKey, rawKeyB64, emailIdentity: rec.email || email};
+        rememberSession("viewer", rawKeyB64, rec.email || email);
+        state.mode = "app";
+        render();
+        incrementCounter(PATH_PREFIX+"stats/totalLogins");
+        await loadPeople();
+        startPolling();
+      }
+    } catch(e){ state.err = "البريد غير مسجّل أو كلمة المرور/الرمز غير صحيح."; }
+    state.busy = false; render();
+  };
+  const emailSetPassBtn = document.getElementById("emailSetPassBtn");
+  if (emailSetPassBtn) emailSetPassBtn.onclick = async () => {
+    const pw = val("emailNewPw"), pw2 = val("emailNewPw2");
+    state.err = "";
+    if (pw.length < 6){ state.err = "كلمة المرور 6 أحرف على الأقل."; render(); return; }
+    if (pw !== pw2){ state.err = "كلمتا المرور غير متطابقتين."; render(); return; }
+    state.busy = true; render();
+    try {
+      const wrap = await wrapDataKeyFor(pw, state.pendingRawKeyB64);
+      await fbSet(PATH_PREFIX+"emailUsers/"+state.pendingEmailKey, {
+        email: state.pendingEmailAddr, addedAt: Date.now(), salt: wrap.salt, wrap: wrap.wrap, passwordSet: true,
+      });
+      const cryptoKey = await importDataKey(state.pendingRawKeyB64);
+      state.session = {role:"viewer", cryptoKey, rawKeyB64: state.pendingRawKeyB64, emailIdentity: state.pendingEmailAddr};
+      rememberSession("viewer", state.pendingRawKeyB64, state.pendingEmailAddr);
+      state.pendingEmailKey = null; state.pendingEmailAddr = ""; state.pendingRawKeyB64 = null;
+      state.mode = "app";
+      render();
+      incrementCounter(PATH_PREFIX+"stats/totalLogins");
+      await loadPeople();
+      startPolling();
+    } catch(e){ state.err = "تعذّر حفظ كلمة المرور."; }
+    state.busy = false; render();
+  };
   const recoverBtn = document.getElementById("recoverBtn");
   if (recoverBtn) recoverBtn.onclick = async () => {
     const code = val("recInput").trim().toUpperCase();
@@ -741,6 +894,7 @@ function wireLoginEvents(){
       rememberSession("admin", state.pendingDataKeyB64);
       state.mode = "app";
       render();
+      incrementCounter(PATH_PREFIX+"stats/totalLogins");
       await loadPeople();
       startPolling();
     } catch(e){ state.err = "تعذّر الحفظ."; }
@@ -761,8 +915,9 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !gestureActive) loadPeople();
   }, 7000);
+  startPresenceHeartbeat();
 }
 
 // ---------- Main app render ----------
@@ -788,7 +943,6 @@ function renderApp(){
 
   let html = '';
   if (state.err) html += '<div class="err-toast">'+esc(state.err)+'</div>';
-  if (state.currentQuote) html += '<div class="quote-box">'+esc(state.currentQuote)+'</div>';
   if (state.kinshipMode === "picking" || state.kinshipMode === "result"){
     let bannerText = "";
     if (state.kinshipMode === "picking"){
@@ -822,6 +976,10 @@ function renderApp(){
     + (isAdmin ? '<button id="showRecoveryBtn">🔐 توليد رمز استرداد جديد</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
     + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
+    + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة</button>' : '')
+    + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
+    + (state.session.emailIdentity ? '<button id="showMyMessagesBtn">📥 رسائلي</button>' : '')
+    + (!isAdmin && !state.session.emailIdentity ? '<button id="showCheckMessagesBtn">📥 التحقق من ردود رسائلي</button>' : '')
     + (isAdmin ? '<button id="exportDataBtn">💾 نسخة احتياطية</button>' : '')
     + (isAdmin ? '<button id="importDataBtn">📥 استيراد ملف</button>' : '')
     + (isAdmin ? '<button id="importPasteBtn">📋 استيراد بلصق نص</button>' : '')
@@ -833,10 +991,12 @@ function renderApp(){
     + (isEditor ? '<button class="ft-btn" id="addPersonBtn">➕ إضافة فرد</button>' : '')
     + '<button class="ft-btn secondary" id="showStatsBtn">📊 إحصائيات</button>'
     + '<button class="ft-btn secondary" id="showKinshipBtn">🔗 القرابة بين شخصين</button>'
+    + '<button class="ft-btn secondary" id="showContactBtn">📨 راسلنا</button>'
     + '<div class="search"><input id="searchInput" dir="rtl" placeholder="ابحث عن اسم..." value="'+esc(state.search)+'"></div>'
     + '</div>'
     + '<div class="legend">';
   for (let g=1; g<=layout.maxGen; g++) html += '<button data-gen="'+g+'">'+esc(genLabel(g))+'</button>';
+  if (state.currentQuote) html += '<div class="quote-box">'+esc(state.currentQuote)+'</div>';
   html += '</div></header>';
 
   html += '<div id="canvasWrap" dir="ltr">';
@@ -887,6 +1047,11 @@ function renderApp(){
   if (isAdmin && state.showChangePw) html += renderChangePwModal();
   if (isAdmin && state.showFamilyName) html += renderFamilyNameModal();
   if (isAdmin && state.showQuotesModal) html += renderQuotesModal();
+  if (state.showContactModal) html += renderContactModal();
+  if (isAdmin && state.showMessagesModal) html += renderMessagesModal();
+  if (state.session.emailIdentity && state.showMyMessagesModal) html += renderMyMessagesModal();
+  if (isAdmin && state.showEmailUsersModal) html += renderEmailUsersModal();
+  if (state.showCheckMessagesModal) html += renderCheckMessagesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
   if (isAdmin && state.showExportModal) html += renderExportModal();
@@ -894,11 +1059,17 @@ function renderApp(){
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
+  const prevModal = document.querySelector(".overlay .modal");
+  const prevModalScroll = prevModal ? prevModal.scrollTop : null;
   app.innerHTML = html;
   wireAppEvents(layout);
   if (prevScroll){
     const newWrap = document.getElementById("canvasWrap");
     if (newWrap){ newWrap.scrollLeft = prevScroll.left; newWrap.scrollTop = prevScroll.top; }
+  }
+  if (prevModalScroll !== null){
+    const newModal = document.querySelector(".overlay .modal");
+    if (newModal) newModal.scrollTop = prevModalScroll;
   }
 }
 
@@ -1064,6 +1235,18 @@ function renderStatsModal(){
       html += '</div>';
     }
   }
+  if (state.session && state.session.role === "admin"){
+    html += '<div style="font-weight:700;color:var(--gold-light);margin:18px 0 8px;font-size:14px;">إحصائيات الزيارات</div>';
+    if (!state.visitorStats){
+      html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+    } else {
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'
+        + statCard("👁️ عدد الفتحات", state.visitorStats.opens)
+        + statCard("🔑 مرات الدخول", state.visitorStats.logins)
+        + statCard("🟢 متصل الآن", state.visitorStats.online)
+        + '</div>';
+    }
+  }
   html += '</div></div>';
   return html;
 }
@@ -1105,13 +1288,15 @@ function renderQuotesModal(){
     + '<button class="modal-close" id="closeQuotesBtn">✕</button>'
     + '<div class="detail-name" style="margin-bottom:6px;">💬 إدارة العبارات</div>'
     + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">تظهر عبارة عشوائية من هذه القائمة لكل زائر عند فتح الموقع.</p>'
-    + '<div class="ft-field"><label>عبارة جديدة</label><textarea id="newQuoteInput" dir="rtl">'+esc(state.newQuoteText||"")+'</textarea></div>'
-    + '<button class="ft-btn" id="addQuoteBtn" style="width:100%;justify-content:center;margin-bottom:14px;">➕ إضافة</button>';
+    + '<div class="ft-field"><label>'+(state.editingQuoteIndex!==null?"تعديل العبارة":"عبارة جديدة")+'</label><textarea id="newQuoteInput" dir="rtl">'+esc(state.newQuoteText||"")+'</textarea></div>'
+    + '<button class="ft-btn" id="addQuoteBtn" style="width:100%;justify-content:center;margin-bottom:8px;">'+(state.editingQuoteIndex!==null?"💾 حفظ التعديل":"➕ إضافة")+'</button>'
+    + (state.editingQuoteIndex!==null ? '<button class="ft-btn secondary" id="cancelEditQuoteBtn" style="width:100%;justify-content:center;margin-bottom:14px;">إلغاء التعديل</button>' : "");
   if (state.quotes.length){
     html += '<div style="display:flex;flex-direction:column;gap:8px;">';
     state.quotes.forEach((q,i) => {
       html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:8px 10px;">'
         + '<div style="flex:1;font-size:13px;">'+esc(q)+'</div>'
+        + '<button class="ft-btn secondary" style="padding:4px 10px;font-size:12px;" id="editQuote_'+i+'">✏️ تعديل</button>'
         + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delQuote_'+i+'">حذف</button>'
         + '</div>';
     });
@@ -1120,6 +1305,136 @@ function renderQuotesModal(){
     html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا توجد عبارات بعد.</div>';
   }
   html += errBlock() + '</div></div>';
+  return html;
+}
+
+function renderContactModal(){
+  return '<div class="overlay" id="contactOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeContactBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📨 راسلنا</div>'
+    + (state.contactSent
+      ? '<p style="color:var(--cream-dim);font-size:14px;text-align:center;margin:20px 0;">✅ تم إرسال رسالتك بنجاح. شكراً لك.</p>'
+        + '<button class="ft-btn secondary" id="closeContactAfterSendBtn" style="width:100%;justify-content:center;">إغلاق</button>'
+      : '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اكتب رسالتك أو استفسارك، وسيصل للمسؤول مباشرة.</p>'
+        + (state.session.emailIdentity ? '' : field("contactNameInput","اسمك (اختياري)","text"))
+        + (state.session.emailIdentity ? '' : '<div class="ft-field"><label>بريدك الإلكتروني (اختياري)</label><input id="contactEmailInput" dir="ltr" placeholder="example@email.com"><div style="font-size:11.5px;color:var(--cream-dim);margin-top:4px;">لو كتبته، بتقدر تتحقق لاحقاً من رد المسؤول. لو تركته فاضي، ما راح توصلك ردود.</div></div>')
+        + '<div class="ft-field"><label>الرسالة</label><textarea id="contactMessageInput" dir="rtl"></textarea></div>'
+        + errBlock()
+        + '<button class="ft-btn" id="sendContactBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الإرسال...':'إرسال')+'</button>')
+    + '</div></div>';
+}
+function renderMessagesModal(){
+  let html = '<div class="overlay" id="messagesOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeMessagesBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:14px;">📬 الرسائل الواردة</div>';
+  if (state.messagesList === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+  } else if (state.messagesList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا توجد رسائل بعد.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+    state.messagesList.forEach(m => {
+      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
+        + '<div style="font-size:12px;color:var(--gold-light);margin-bottom:4px;">'+esc(m.email || m.name || 'بدون اسم')+' — '+dateStr+'</div>'
+        + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;margin-bottom:8px;">'+esc(m.message)+'</div>'
+        + (m.reply
+          ? '<div style="border-top:1px solid rgba(201,161,90,0.2);padding-top:8px;margin-top:6px;"><div style="font-size:12px;color:var(--gold-light);margin-bottom:2px;">ردك:</div><div style="font-size:13px;color:var(--cream-dim);white-space:pre-wrap;">'+esc(m.reply)+'</div></div>'
+          : (state.replyOpenId === m.id
+              ? '<div class="ft-field" style="margin-top:8px;"><textarea id="replyInput_'+m.id+'" dir="rtl" placeholder="اكتب ردك..."></textarea></div>'
+                + '<button class="ft-btn" style="padding:6px 14px;font-size:12.5px;" id="sendReplyBtn_'+m.id+'">إرسال الرد</button>'
+              : '<button class="ft-btn secondary" style="padding:6px 14px;font-size:12.5px;" id="openReplyBtn_'+m.id+'">✍️ رد</button>'))
+        + '<button class="ft-btn danger" style="padding:6px 14px;font-size:12.5px;margin-inline-start:6px;" id="deleteMsgBtn_'+m.id+'">🗑 حذف</button>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += errBlock() + '</div></div>';
+  return html;
+}
+function renderMyMessagesModal(){
+  let html = '<div class="overlay" id="myMessagesOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeMyMessagesBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:14px;">📥 رسائلي</div>';
+  if (state.myMessagesList === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+  } else if (state.myMessagesList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لم ترسل أي رسالة بعد.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+    state.myMessagesList.forEach(m => {
+      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
+        + '<div style="font-size:12px;color:var(--cream-dim);margin-bottom:4px;">'+dateStr+'</div>'
+        + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;">'+esc(m.message)+'</div>'
+        + (m.reply
+          ? '<div style="border-top:1px solid rgba(201,161,90,0.2);padding-top:8px;margin-top:8px;"><div style="font-size:12px;color:var(--gold-light);margin-bottom:2px;">رد المسؤول:</div><div style="font-size:13px;color:var(--cream-dim);white-space:pre-wrap;">'+esc(m.reply)+'</div></div>'
+          : '<div style="font-size:12px;color:var(--cream-dim);margin-top:8px;">⏳ بانتظار الرد</div>')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
+function renderEmailUsersModal(){
+  let html = '<div class="overlay" id="emailUsersOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeEmailUsersBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📧 إدارة الدخول بالبريد</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">أضف بريد أي شخص تسمح له بالدخول كمشاهد. سيحصل على رمز مؤقت لإرساله له يدوياً، وسيختار كلمة مرور خاصة به عند أول دخول.</p>'
+    + '<div class="ft-field"><label>بريد جديد</label><input id="newEmailInput" dir="ltr" placeholder="example@email.com"></div>'
+    + '<button class="ft-btn" id="addEmailUserBtn" style="width:100%;justify-content:center;margin-bottom:14px;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الإضافة...':'➕ إضافة')+'</button>';
+  if (state.newEmailTempCode){
+    html += '<p style="color:var(--cream-dim);font-size:12.5px;text-align:center;margin-bottom:6px;">أرسل هذا الرمز للشخص يدوياً (واتساب/إيميل) — يستخدمه أول مرة بس:</p>'
+      + '<div class="ft-recovery-code" style="margin-bottom:14px;">'+esc(state.newEmailTempCode)+'</div>';
+  }
+  html += errBlock();
+  if (state.emailUsersList === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+  } else if (state.emailUsersList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا يوجد أحد مضاف بعد.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    state.emailUsersList.forEach(u => {
+      html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:8px 10px;">'
+        + '<div style="flex:1;"><div style="font-size:13px;" dir="ltr">'+esc(u.email)+'</div>'
+        + '<div style="font-size:11px;color:var(--cream-dim);">'+(u.passwordSet ? '✅ فعّل حسابه' : '⏳ بانتظار أول دخول')+'</div></div>'
+        + '<button class="ft-btn secondary" style="padding:4px 10px;font-size:12px;" id="resetEmailBtn_'+u.key+'">🔄 إعادة تعيين</button>'
+        + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delEmailBtn_'+u.key+'">🗑 حذف</button>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderCheckMessagesModal(){
+  let html = '<div class="overlay" id="checkMessagesOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeCheckMessagesBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📥 التحقق من ردود رسائلي</div>';
+  if (state.checkMessagesList === null){
+    html += '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اكتب نفس البريد اللي استخدمته وقت إرسال رسالتك.</p>'
+      + '<div class="ft-field"><label>البريد الإلكتروني</label><input id="checkEmailInput" dir="ltr" placeholder="example@email.com"></div>'
+      + errBlock()
+      + '<button class="ft-btn" id="checkMessagesSubmitBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ البحث...':'تحقق')+'</button>';
+  } else if (state.checkMessagesList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">ما لقينا أي رسالة بهذا البريد.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+    state.checkMessagesList.forEach(m => {
+      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
+        + '<div style="font-size:12px;color:var(--cream-dim);margin-bottom:4px;">'+dateStr+'</div>'
+        + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;">'+esc(m.message)+'</div>'
+        + (m.reply
+          ? '<div style="border-top:1px solid rgba(201,161,90,0.2);padding-top:8px;margin-top:8px;"><div style="font-size:12px;color:var(--gold-light);margin-bottom:2px;">رد المسؤول:</div><div style="font-size:13px;color:var(--cream-dim);white-space:pre-wrap;">'+esc(m.reply)+'</div></div>'
+          : '<div style="font-size:12px;color:var(--cream-dim);margin-top:8px;">⏳ بانتظار الرد</div>')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
   return html;
 }
 
@@ -1291,7 +1606,32 @@ function wireAppEvents(layout){
     }
   });
   const showStatsBtn = document.getElementById("showStatsBtn");
-  if (showStatsBtn) showStatsBtn.onclick = () => { state.showStats = true; render(); };
+  if (showStatsBtn) showStatsBtn.onclick = () => {
+    state.showStats = true; state.visitorStats = null; render();
+    if (state.session && state.session.role === "admin"){
+      (async () => {
+        try {
+          const [opens, logins, presence] = await Promise.all([
+            fbGet(PATH_PREFIX+"stats/totalOpens"),
+            fbGet(PATH_PREFIX+"stats/totalLogins"),
+            fbGet(PATH_PREFIX+"presence"),
+          ]);
+          const now = Date.now();
+          let online = 0;
+          const stale = [];
+          if (presence){
+            Object.entries(presence).forEach(([sid, ts]) => {
+              if (now - ts < 45000) online++;
+              else if (now - ts > 300000) stale.push(sid);
+            });
+          }
+          state.visitorStats = { opens: opens||0, logins: logins||0, online };
+          stale.forEach(sid => { fbDelete(PATH_PREFIX+"presence/"+sid).catch(()=>{}); });
+        } catch(_) { state.visitorStats = { opens: 0, logins: 0, online: 0 }; }
+        if (state.showStats) render();
+      })();
+    }
+  };
   const statsOverlay = document.getElementById("statsOverlay");
   if (statsOverlay){
     statsOverlay.onclick = () => { state.showStats=false; render(); };
@@ -1367,6 +1707,175 @@ function wireAppEvents(layout){
     };
   }
 
+  const showContactBtn = document.getElementById("showContactBtn");
+  if (showContactBtn) showContactBtn.onclick = () => { state.showContactModal = true; state.contactSent = false; state.err=""; render(); };
+  const contactOverlay = document.getElementById("contactOverlay");
+  if (contactOverlay){
+    contactOverlay.onclick = () => { state.showContactModal=false; state.err=""; render(); };
+    const closeContactBtn = document.getElementById("closeContactBtn");
+    if (closeContactBtn) closeContactBtn.onclick = () => { state.showContactModal=false; state.err=""; render(); };
+    const closeContactAfterSendBtn = document.getElementById("closeContactAfterSendBtn");
+    if (closeContactAfterSendBtn) closeContactAfterSendBtn.onclick = () => { state.showContactModal=false; state.contactSent=false; render(); };
+    const sendContactBtn = document.getElementById("sendContactBtn");
+    if (sendContactBtn) sendContactBtn.onclick = async () => {
+      const message = val("contactMessageInput");
+      if (!message.trim()){ state.err = "اكتب رسالة أولاً."; render(); return; }
+      const name = state.session.emailIdentity ? "" : val("contactNameInput");
+      const typedEmail = state.session.emailIdentity ? "" : val("contactEmailInput");
+      state.err = ""; state.busy = true; render();
+      try {
+        const obj = { name: name||"", email: state.session.emailIdentity || (typedEmail.trim()||null), message: message.trim(), sentAt: Date.now(), reply: null, repliedAt: null };
+        const cipher = await encryptText(state.session.cryptoKey, JSON.stringify(obj));
+        await fbSet(PATH_PREFIX+"messages/"+uid(), cipher);
+        state.contactSent = true;
+      } catch(e){ state.err = "تعذّر إرسال الرسالة."; }
+      state.busy = false; render();
+    };
+  }
+
+  const showMessagesBtn = document.getElementById("showMessagesBtn");
+  if (showMessagesBtn) showMessagesBtn.onclick = () => {
+    state.showMessagesModal = true; state.messagesList = null; state.replyOpenId = null; state.err=""; render();
+    (async () => {
+      try { state.messagesList = await fetchAndDecryptMessages(); }
+      catch(_) { state.messagesList = []; }
+      if (state.showMessagesModal) render();
+    })();
+  };
+  const messagesOverlay = document.getElementById("messagesOverlay");
+  if (messagesOverlay){
+    messagesOverlay.onclick = () => { state.showMessagesModal=false; state.replyOpenId=null; render(); };
+    const closeMessagesBtn = document.getElementById("closeMessagesBtn");
+    if (closeMessagesBtn) closeMessagesBtn.onclick = () => { state.showMessagesModal=false; state.replyOpenId=null; render(); };
+    (state.messagesList||[]).forEach(m => {
+      const openBtn = document.getElementById("openReplyBtn_"+m.id);
+      if (openBtn) openBtn.onclick = () => { state.replyOpenId = m.id; render(); };
+      const sendBtn = document.getElementById("sendReplyBtn_"+m.id);
+      if (sendBtn) sendBtn.onclick = async () => {
+        const replyText = val("replyInput_"+m.id);
+        if (!replyText.trim()) return;
+        state.busy = true; render();
+        try {
+          const updated = {...m}; delete updated.id;
+          updated.reply = replyText.trim(); updated.repliedAt = Date.now();
+          const cipher = await encryptText(state.session.cryptoKey, JSON.stringify(updated));
+          await fbSet(PATH_PREFIX+"messages/"+m.id, cipher);
+          state.messagesList = await fetchAndDecryptMessages();
+          state.replyOpenId = null;
+        } catch(e){ state.err = "تعذّر إرسال الرد."; }
+        state.busy = false; render();
+      };
+      const delBtn = document.getElementById("deleteMsgBtn_"+m.id);
+      if (delBtn) delBtn.onclick = async () => {
+        state.busy = true; render();
+        try {
+          await fbDelete(PATH_PREFIX+"messages/"+m.id);
+          state.messagesList = await fetchAndDecryptMessages();
+        } catch(e){ state.err = "تعذّر الحذف."; }
+        state.busy = false; render();
+      };
+    });
+  }
+
+  const showMyMessagesBtn = document.getElementById("showMyMessagesBtn");
+  if (showMyMessagesBtn) showMyMessagesBtn.onclick = () => {
+    state.showMyMessagesModal = true; state.myMessagesList = null; render();
+    (async () => {
+      try {
+        const all = await fetchAndDecryptMessages();
+        state.myMessagesList = all.filter(m => m.email === state.session.emailIdentity);
+      } catch(_) { state.myMessagesList = []; }
+      if (state.showMyMessagesModal) render();
+    })();
+  };
+  const myMessagesOverlay = document.getElementById("myMessagesOverlay");
+  if (myMessagesOverlay){
+    myMessagesOverlay.onclick = () => { state.showMyMessagesModal=false; render(); };
+    const closeMyMessagesBtn = document.getElementById("closeMyMessagesBtn");
+    if (closeMyMessagesBtn) closeMyMessagesBtn.onclick = () => { state.showMyMessagesModal=false; render(); };
+  }
+
+  const showCheckMessagesBtn = document.getElementById("showCheckMessagesBtn");
+  if (showCheckMessagesBtn) showCheckMessagesBtn.onclick = () => { state.showCheckMessagesModal = true; state.checkMessagesList = null; state.err=""; render(); };
+  const checkMessagesOverlay = document.getElementById("checkMessagesOverlay");
+  if (checkMessagesOverlay){
+    checkMessagesOverlay.onclick = () => { state.showCheckMessagesModal=false; state.checkMessagesList=null; state.err=""; render(); };
+    const closeCheckMessagesBtn = document.getElementById("closeCheckMessagesBtn");
+    if (closeCheckMessagesBtn) closeCheckMessagesBtn.onclick = () => { state.showCheckMessagesModal=false; state.checkMessagesList=null; state.err=""; render(); };
+    const checkMessagesSubmitBtn = document.getElementById("checkMessagesSubmitBtn");
+    if (checkMessagesSubmitBtn) checkMessagesSubmitBtn.onclick = async () => {
+      const email = val("checkEmailInput");
+      if (!isValidEmail(email)){ state.err = "أدخل بريداً إلكترونياً صحيحاً."; render(); return; }
+      state.err = ""; state.busy = true; render();
+      try {
+        const all = await fetchAndDecryptMessages();
+        state.checkMessagesList = all.filter(m => (m.email||"").trim().toLowerCase() === email.trim().toLowerCase());
+      } catch(e){ state.err = "تعذّر البحث."; }
+      state.busy = false; render();
+    };
+  }
+
+  const showEmailUsersBtn = document.getElementById("showEmailUsersBtn");
+  if (showEmailUsersBtn) showEmailUsersBtn.onclick = () => {
+    state.showEmailUsersModal = true; state.emailUsersList = null; state.newEmailTempCode = ""; state.err=""; render();
+    (async () => {
+      try {
+        const raw = await fbGet(PATH_PREFIX+"emailUsers");
+        state.emailUsersList = raw ? Object.entries(raw).map(([key,v]) => ({key, ...v})) : [];
+      } catch(_) { state.emailUsersList = []; }
+      if (state.showEmailUsersModal) render();
+    })();
+  };
+  const emailUsersOverlay = document.getElementById("emailUsersOverlay");
+  if (emailUsersOverlay){
+    emailUsersOverlay.onclick = () => { state.showEmailUsersModal=false; state.newEmailTempCode=""; state.err=""; render(); };
+    const closeEmailUsersBtn = document.getElementById("closeEmailUsersBtn");
+    if (closeEmailUsersBtn) closeEmailUsersBtn.onclick = () => { state.showEmailUsersModal=false; state.newEmailTempCode=""; state.err=""; render(); };
+    const addEmailUserBtn = document.getElementById("addEmailUserBtn");
+    if (addEmailUserBtn) addEmailUserBtn.onclick = async () => {
+      const email = val("newEmailInput");
+      state.err = "";
+      if (!isValidEmail(email)){ state.err = "أدخل بريداً إلكترونياً صحيحاً."; render(); return; }
+      const key = emailKeyOf(email);
+      if ((state.emailUsersList||[]).some(u => u.key === key)){ state.err = "هذا البريد مضاف مسبقاً."; render(); return; }
+      state.busy = true; render();
+      try {
+        const tempCode = genTempCode();
+        const wrap = await wrapDataKeyFor(tempCode, state.session.rawKeyB64);
+        await fbSet(PATH_PREFIX+"emailUsers/"+key, { email: email.trim(), addedAt: Date.now(), salt: wrap.salt, wrap: wrap.wrap, passwordSet: false });
+        state.newEmailTempCode = tempCode;
+        const raw = await fbGet(PATH_PREFIX+"emailUsers");
+        state.emailUsersList = raw ? Object.entries(raw).map(([k,v]) => ({key:k, ...v})) : [];
+      } catch(e){ state.err = "تعذّر إضافة البريد."; }
+      state.busy = false; render();
+    };
+    (state.emailUsersList||[]).forEach(u => {
+      const resetBtn = document.getElementById("resetEmailBtn_"+u.key);
+      if (resetBtn) resetBtn.onclick = async () => {
+        state.busy = true; render();
+        try {
+          const tempCode = genTempCode();
+          const wrap = await wrapDataKeyFor(tempCode, state.session.rawKeyB64);
+          await fbSet(PATH_PREFIX+"emailUsers/"+u.key, { email: u.email, addedAt: u.addedAt||Date.now(), salt: wrap.salt, wrap: wrap.wrap, passwordSet: false });
+          state.newEmailTempCode = tempCode;
+          const raw = await fbGet(PATH_PREFIX+"emailUsers");
+          state.emailUsersList = raw ? Object.entries(raw).map(([k,v]) => ({key:k, ...v})) : [];
+        } catch(e){ state.err = "تعذّر إعادة التعيين."; }
+        state.busy = false; render();
+      };
+      const delBtn = document.getElementById("delEmailBtn_"+u.key);
+      if (delBtn) delBtn.onclick = async () => {
+        state.busy = true; render();
+        try {
+          await fbDelete(PATH_PREFIX+"emailUsers/"+u.key);
+          const raw = await fbGet(PATH_PREFIX+"emailUsers");
+          state.emailUsersList = raw ? Object.entries(raw).map(([k,v]) => ({key:k, ...v})) : [];
+        } catch(e){ state.err = "تعذّر الحذف."; }
+        state.busy = false; render();
+      };
+    });
+  }
+
   const changePwBtn = document.getElementById("changePwBtn");
   if (changePwBtn) changePwBtn.onclick = () => { state.showChangePw = true; state.err=""; render(); };
   const manageQuotesBtn = document.getElementById("manageQuotesBtn");
@@ -1375,25 +1884,39 @@ function wireAppEvents(layout){
   if (quotesOverlay){
     quotesOverlay.onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
     document.getElementById("closeQuotesBtn").onclick = () => { state.showQuotesModal=false; state.err=""; render(); };
+    const newQuoteInputEl = document.getElementById("newQuoteInput");
+    if (newQuoteInputEl) newQuoteInputEl.oninput = e => { state.newQuoteText = e.target.value; };
     const addQuoteBtn = document.getElementById("addQuoteBtn");
     if (addQuoteBtn) addQuoteBtn.onclick = async () => {
       const text = val("newQuoteInput");
       if (!text.trim()) return;
       state.busy = true; render();
       try {
-        const list = [...state.quotes, text.trim()];
+        let list;
+        if (state.editingQuoteIndex !== null){
+          list = [...state.quotes];
+          list[state.editingQuoteIndex] = text.trim();
+        } else {
+          list = [...state.quotes, text.trim()];
+        }
         await saveQuotes(list);
         state.newQuoteText = "";
+        state.editingQuoteIndex = null;
       } catch(e){ state.err = "تعذّر حفظ العبارة."; }
       state.busy = false; render();
     };
+    const cancelEditQuoteBtn = document.getElementById("cancelEditQuoteBtn");
+    if (cancelEditQuoteBtn) cancelEditQuoteBtn.onclick = () => { state.newQuoteText = ""; state.editingQuoteIndex = null; render(); };
     state.quotes.forEach((q,i) => {
+      const eq = document.getElementById("editQuote_"+i);
+      if (eq) eq.onclick = () => { state.newQuoteText = state.quotes[i]; state.editingQuoteIndex = i; render(); };
       const dq = document.getElementById("delQuote_"+i);
       if (dq) dq.onclick = async () => {
         state.busy = true; render();
         try {
           const list = state.quotes.filter((_,idx)=>idx!==i);
           await saveQuotes(list);
+          if (state.editingQuoteIndex === i){ state.newQuoteText = ""; state.editingQuoteIndex = null; }
         } catch(e){ state.err = "تعذّر الحذف."; }
         state.busy = false; render();
       };
@@ -1758,6 +2281,7 @@ function wireAppEvents(layout){
 // ---------- Boot ----------
 (async function boot(){
   updateAppIconAndManifest("شجرة العائلة");
+  incrementCounter(PATH_PREFIX+"stats/totalOpens");
   if (!window.crypto || !window.crypto.subtle){ state.mode="unsupported"; render(); return; }
   try { const meta = await loadMeta(); state.familyName = meta.familyNameEnc ? "" : (meta.familyName || ""); if (state.familyName) updateAppTitle(state.familyName); } catch(_) {}
   const rec = await loadAuthRecord();
@@ -1766,9 +2290,10 @@ function wireAppEvents(layout){
     if (remembered && remembered.rawKeyB64){
       try {
         const cryptoKey = await importDataKey(remembered.rawKeyB64);
-        state.session = {role: remembered.role, cryptoKey, rawKeyB64: remembered.rawKeyB64};
+        state.session = {role: remembered.role, cryptoKey, rawKeyB64: remembered.rawKeyB64, emailIdentity: remembered.emailIdentity||null};
         state.mode = "app";
         render();
+        incrementCounter(PATH_PREFIX+"stats/totalLogins");
         await loadPeople();
         startPolling();
         return;
