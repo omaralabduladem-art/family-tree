@@ -182,6 +182,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 }
 .node.kinship-highlight{border-color:var(--gold-light)!important;box-shadow:0 0 16px 3px var(--gold-light);z-index:5;}
 .node.kinship-dim{opacity:0.15;}
+.badge-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:#FF3B30;color:#fff;font-size:10px;font-weight:700;margin-inline-start:4px;vertical-align:middle;}
 .header-toggle-btn{display:none;}
 @media (max-width:960px){
   .header-toggle-btn{display:block;position:fixed;top:8px;left:8px;z-index:35;background:var(--panel-2);border:1px solid rgba(201,161,90,0.45);color:var(--gold-light);border-radius:999px;padding:6px 16px;font-size:12.5px;font-family:'Tajawal',sans-serif;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);}
@@ -368,6 +369,10 @@ const state = {
   showCheckMessagesModal: false,
   checkMessagesList: null,
   hideHeaderMobile: false,
+  joinRequestSent: false,
+  showJoinRequestsModal: false,
+  joinRequestsList: null,
+  pendingJoinCount: 0,
 };
 
 const app = document.getElementById("app");
@@ -571,6 +576,12 @@ async function fetchAndDecryptMessages(){
   list.sort((a,b) => (b.sentAt||0) - (a.sentAt||0));
   return list;
 }
+async function loadJoinRequestsCount(){
+  try {
+    const raw = await fbGet(PATH_PREFIX+"joinRequests");
+    state.pendingJoinCount = raw ? Object.values(raw).filter(r=>r.status==="pending").length : 0;
+  } catch(_) { state.pendingJoinCount = 0; }
+}
 async function incrementCounter(path){
   try {
     const cur = await fbGet(path);
@@ -611,6 +622,7 @@ async function loadPeople(){
     }
     if (state.familyName) updateAppTitle(state.familyName);
     await loadQuotes();
+    if (state.session.role === "admin") await loadJoinRequestsCount();
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -689,13 +701,25 @@ function renderLogin(){
       + field("emailNewPw2","تأكيد كلمة المرور","password")
       + errBlock()
       + '<button class="ft-btn" id="emailSetPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ ودخول')+'</button>';
+  } else if (state.mode === "join-request"){
+    html += '<h2>طلب تسجيل جديد</h2><p>املأ بياناتك، وسيتواصل معك المسؤول بعد الموافقة على طلبك.</p>'
+      + (state.joinRequestSent
+        ? '<p style="color:var(--gold-light);text-align:center;margin:20px 0;">✅ تم إرسال طلبك بنجاح. سيتواصل معك المسؤول قريباً.</p>'
+          + '<button class="ft-btn secondary" id="backFromJoinBtn" style="width:100%;justify-content:center;">رجوع لتسجيل الدخول</button>'
+        : field("joinName","الاسم","text")
+          + field("joinEmail","البريد الإلكتروني","text","example@email.com")
+          + field("joinPhone","رقم الجوال","text","05xxxxxxxx")
+          + errBlock()
+          + '<button class="ft-btn" id="submitJoinRequestBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الإرسال...':'إرسال الطلب')+'</button>'
+          + '<button class="ft-btn secondary" id="backFromJoinBtn" style="width:100%;justify-content:center;margin-top:8px;">رجوع</button>');
   } else { // login
     html += '<h2>'+loginTitle+'</h2><p>أدخل كلمة مرور المسؤول أو المحرِّر أو المشاهدة.</p>'
       + field("loginPw","كلمة المرور","password")
       + errBlock()
       + '<button class="ft-btn" id="loginBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ التحقق...':'دخول')+'</button>'
       + '<button class="ft-btn secondary" id="forgotBtn" style="width:100%;justify-content:center;margin-top:8px;">نسيت كلمات المرور؟</button>'
-      + '<button class="ft-btn secondary" id="emailLoginLinkBtn" style="width:100%;justify-content:center;margin-top:8px;">📧 الدخول ببريدك الإلكتروني</button>';
+      + '<button class="ft-btn secondary" id="emailLoginLinkBtn" style="width:100%;justify-content:center;margin-top:8px;">📧 الدخول ببريدك الإلكتروني</button>'
+      + '<button class="ft-btn secondary" id="joinRequestLinkBtn" style="width:100%;justify-content:center;margin-top:8px;">📝 طلب تسجيل جديد</button>';
   }
   html += '</div></div>';
   app.innerHTML = html;
@@ -815,6 +839,24 @@ function wireLoginEvents(){
   if (backBtn) backBtn.onclick = () => { state.mode="login"; state.err=""; render(); };
   const emailLoginLinkBtn = document.getElementById("emailLoginLinkBtn");
   if (emailLoginLinkBtn) emailLoginLinkBtn.onclick = () => { state.mode="email-login"; state.err=""; render(); };
+  const joinRequestLinkBtn = document.getElementById("joinRequestLinkBtn");
+  if (joinRequestLinkBtn) joinRequestLinkBtn.onclick = () => { state.mode="join-request"; state.err=""; state.joinRequestSent=false; render(); };
+  const backFromJoinBtn = document.getElementById("backFromJoinBtn");
+  if (backFromJoinBtn) backFromJoinBtn.onclick = () => { state.mode="login"; state.err=""; state.joinRequestSent=false; render(); };
+  const submitJoinRequestBtn = document.getElementById("submitJoinRequestBtn");
+  if (submitJoinRequestBtn) submitJoinRequestBtn.onclick = async () => {
+    const name = val("joinName"), email = val("joinEmail"), phone = val("joinPhone");
+    state.err = "";
+    if (!name.trim()){ state.err="الاسم مطلوب."; render(); return; }
+    if (!isValidEmail(email)){ state.err="أدخل بريداً إلكترونياً صحيحاً."; render(); return; }
+    if (!phone.trim()){ state.err="رقم الجوال مطلوب."; render(); return; }
+    state.busy = true; render();
+    try {
+      await fbSet(PATH_PREFIX+"joinRequests/"+uid(), {name:name.trim(), email:email.trim(), phone:phone.trim(), requestedAt: Date.now(), status:"pending", tempCode:null});
+      state.joinRequestSent = true;
+    } catch(e){ state.err = "تعذّر إرسال الطلب."; }
+    state.busy = false; render();
+  };
   const backToNormalLoginBtn = document.getElementById("backToNormalLoginBtn");
   if (backToNormalLoginBtn) backToNormalLoginBtn.onclick = () => { state.mode="login"; state.err=""; render(); };
   const emailLoginSubmitBtn = document.getElementById("emailLoginSubmitBtn");
@@ -993,6 +1035,7 @@ function renderApp(){
     + (isAdmin ? '<button id="showRecoveryBtn">🔐 توليد رمز استرداد جديد</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
     + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
+    + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة</button>' : '')
     + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
     + (state.session.emailIdentity ? '<button id="showMyMessagesBtn">📥 رسائلي</button>' : '')
@@ -1069,6 +1112,7 @@ function renderApp(){
   if (isAdmin && state.showMessagesModal) html += renderMessagesModal();
   if (state.session.emailIdentity && state.showMyMessagesModal) html += renderMyMessagesModal();
   if (isAdmin && state.showEmailUsersModal) html += renderEmailUsersModal();
+  if (isAdmin && state.showJoinRequestsModal) html += renderJoinRequestsModal();
   if (state.showCheckMessagesModal) html += renderCheckMessagesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
@@ -1352,9 +1396,12 @@ function renderMessagesModal(){
   } else {
     html += '<div style="display:flex;flex-direction:column;gap:12px;">';
     state.messagesList.forEach(m => {
-      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      const dateStr = new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric', hour:'numeric', minute:'numeric'}).format(new Date(m.sentAt));
+      const emailHtml = m.email ? ('<span dir="ltr" style="unicode-bidi:plaintext;">'+esc(m.email)+'</span> <button class="ft-btn secondary" style="padding:1px 8px;font-size:10px;" id="copyEmailBtn_'+m.id+'">📋 نسخ</button>') : '';
+      const identityHtml = (m.name?esc(m.name):'') + (m.name && m.email ? ' — ' : '') + emailHtml + (!m.name && !m.email ? 'بدون اسم' : '');
       html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
-        + '<div style="font-size:12px;color:var(--gold-light);margin-bottom:4px;">'+esc((m.name && m.email) ? (m.name+' — '+m.email) : (m.name || m.email || 'بدون اسم'))+' — '+dateStr+'</div>'
+        + '<div style="font-size:12px;color:var(--gold-light);">'+identityHtml+'</div>'
+        + '<div style="font-size:11px;color:var(--cream-dim);margin-bottom:4px;white-space:nowrap;">'+dateStr+'</div>'
         + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;margin-bottom:8px;">'+esc(m.message)+'</div>'
         + (m.reply
           ? '<div style="border-top:1px solid rgba(201,161,90,0.2);padding-top:8px;margin-top:6px;"><div style="font-size:12px;color:var(--gold-light);margin-bottom:2px;">ردك:</div><div style="font-size:13px;color:var(--cream-dim);white-space:pre-wrap;">'+esc(m.reply)+'</div></div>'
@@ -1381,7 +1428,7 @@ function renderMyMessagesModal(){
   } else {
     html += '<div style="display:flex;flex-direction:column;gap:12px;">';
     state.myMessagesList.forEach(m => {
-      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      const dateStr = new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric', hour:'numeric', minute:'numeric'}).format(new Date(m.sentAt));
       html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
         + '<div style="font-size:12px;color:var(--cream-dim);margin-bottom:4px;">'+dateStr+'</div>'
         + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;">'+esc(m.message)+'</div>'
@@ -1441,7 +1488,7 @@ function renderCheckMessagesModal(){
   } else {
     html += '<div style="display:flex;flex-direction:column;gap:12px;">';
     state.checkMessagesList.forEach(m => {
-      const dateStr = new Date(m.sentAt).toLocaleString('ar-SA');
+      const dateStr = new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric', hour:'numeric', minute:'numeric'}).format(new Date(m.sentAt));
       html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
         + '<div style="font-size:12px;color:var(--cream-dim);margin-bottom:4px;">'+dateStr+'</div>'
         + '<div style="font-size:13.5px;color:var(--cream);white-space:pre-wrap;">'+esc(m.message)+'</div>'
@@ -1453,6 +1500,43 @@ function renderCheckMessagesModal(){
     html += '</div>';
   }
   html += '</div></div>';
+  return html;
+}
+
+function renderJoinRequestsModal(){
+  let html = '<div class="overlay" id="joinRequestsOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeJoinRequestsBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:14px;">📝 طلبات التسجيل</div>';
+  if (state.joinRequestsList === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+  } else if (state.joinRequestsList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا توجد طلبات.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+    state.joinRequestsList.forEach(r => {
+      const dateStr = new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric'}).format(new Date(r.requestedAt));
+      html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
+        + '<div style="font-size:13px;color:var(--gold-light);font-weight:700;">'+esc(r.name)+'</div>'
+        + '<div style="font-size:12px;color:var(--cream-dim);" dir="ltr">'+esc(r.email)+'</div>'
+        + '<div style="font-size:12px;color:var(--cream-dim);" dir="ltr">'+esc(r.phone)+'</div>'
+        + '<div style="font-size:11px;color:var(--cream-dim);margin-bottom:6px;">'+dateStr+'</div>';
+      if (r.status === 'pending'){
+        html += '<div style="display:flex;gap:8px;">'
+          + '<button class="ft-btn" style="padding:5px 12px;font-size:12px;" id="approveJoinBtn_'+r.id+'">✅ موافقة</button>'
+          + '<button class="ft-btn danger" style="padding:5px 12px;font-size:12px;" id="rejectJoinBtn_'+r.id+'">❌ رفض</button>'
+          + '</div>';
+      } else if (r.status === 'approved'){
+        html += '<div style="color:var(--gold-light);font-size:12px;margin-bottom:4px;">✅ تمت الموافقة — الرمز المؤقت:</div>'
+          + '<div class="ft-recovery-code" style="font-size:13px;padding:8px;">'+esc(r.tempCode||'')+'</div>'
+          + '<p style="font-size:11px;color:var(--cream-dim);margin-top:4px;">أرسل هذا الرمز مع البريد للشخص يدوياً (واتساب/إيميل).</p>';
+      } else if (r.status === 'rejected'){
+        html += '<div style="color:var(--danger);font-size:12px;">❌ مرفوض</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += errBlock() + '</div></div>';
   return html;
 }
 
@@ -1768,6 +1852,14 @@ function wireAppEvents(layout){
     const closeMessagesBtn = document.getElementById("closeMessagesBtn");
     if (closeMessagesBtn) closeMessagesBtn.onclick = () => { state.showMessagesModal=false; state.replyOpenId=null; render(); };
     (state.messagesList||[]).forEach(m => {
+      const copyEmailBtn = document.getElementById("copyEmailBtn_"+m.id);
+      if (copyEmailBtn) copyEmailBtn.onclick = async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(m.email);
+          copyEmailBtn.textContent = "✅ تم";
+          setTimeout(() => { copyEmailBtn.textContent = "📋 نسخ"; }, 1500);
+        } catch(_) {}
+      };
       const openBtn = document.getElementById("openReplyBtn_"+m.id);
       if (openBtn) openBtn.onclick = () => { state.replyOpenId = m.id; render(); };
       const sendBtn = document.getElementById("sendReplyBtn_"+m.id);
@@ -1833,6 +1925,59 @@ function wireAppEvents(layout){
       } catch(e){ state.err = "تعذّر البحث."; }
       state.busy = false; render();
     };
+  }
+
+  const showJoinRequestsBtn = document.getElementById("showJoinRequestsBtn");
+  if (showJoinRequestsBtn) showJoinRequestsBtn.onclick = () => {
+    state.showJoinRequestsModal = true; state.joinRequestsList = null; state.err=""; render();
+    (async () => {
+      try {
+        const raw = await fbGet(PATH_PREFIX+"joinRequests");
+        const list = raw ? Object.entries(raw).map(([id,v]) => ({id, ...v})) : [];
+        list.sort((a,b) => (b.requestedAt||0) - (a.requestedAt||0));
+        state.joinRequestsList = list;
+      } catch(_) { state.joinRequestsList = []; }
+      if (state.showJoinRequestsModal) render();
+    })();
+  };
+  const joinRequestsOverlay = document.getElementById("joinRequestsOverlay");
+  if (joinRequestsOverlay){
+    joinRequestsOverlay.onclick = () => { state.showJoinRequestsModal=false; state.err=""; render(); };
+    const closeJoinRequestsBtn = document.getElementById("closeJoinRequestsBtn");
+    if (closeJoinRequestsBtn) closeJoinRequestsBtn.onclick = () => { state.showJoinRequestsModal=false; state.err=""; render(); };
+    const refreshJoinList = async () => {
+      const raw = await fbGet(PATH_PREFIX+"joinRequests");
+      const list = raw ? Object.entries(raw).map(([id,v]) => ({id, ...v})) : [];
+      list.sort((a,b) => (b.requestedAt||0) - (a.requestedAt||0));
+      state.joinRequestsList = list;
+      await loadJoinRequestsCount();
+    };
+    (state.joinRequestsList||[]).forEach(r => {
+      const approveBtn = document.getElementById("approveJoinBtn_"+r.id);
+      if (approveBtn) approveBtn.onclick = async () => {
+        state.busy = true; render();
+        try {
+          const tempCode = genTempCode();
+          const wrap = await wrapDataKeyFor(tempCode, state.session.rawKeyB64);
+          const emailKey = emailKeyOf(r.email);
+          await fbSet(PATH_PREFIX+"emailUsers/"+emailKey, { email: r.email, addedAt: Date.now(), salt: wrap.salt, wrap: wrap.wrap, passwordSet: false });
+          const updated = {...r, id: undefined, status: "approved", tempCode};
+          await fbSet(PATH_PREFIX+"joinRequests/"+r.id, updated);
+          await refreshJoinList();
+        } catch(e){ state.err = "تعذّر الموافقة."; }
+        state.busy = false; render();
+      };
+      const rejectBtn = document.getElementById("rejectJoinBtn_"+r.id);
+      if (rejectBtn) rejectBtn.onclick = async () => {
+        state.busy = true; render();
+        try {
+          const updated = {...r, id: undefined, status: "rejected"};
+          await fbSet(PATH_PREFIX+"joinRequests/"+r.id, updated);
+          await refreshJoinList();
+        } catch(e){ state.err = "تعذّر الرفض."; }
+        state.busy = false; render();
+      };
+    });
   }
 
   const showEmailUsersBtn = document.getElementById("showEmailUsersBtn");
