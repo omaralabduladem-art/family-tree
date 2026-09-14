@@ -378,6 +378,10 @@ const state = {
   branchExportRootId: null,
   branchDeleteConfirm: false,
   showBranchImportModal: false,
+  copiedWelcomeId: null,
+  branchImportText: "",
+  branchImportParentId: "",
+  branchImportParentName: "",
 };
 
 const app = document.getElementById("app");
@@ -679,9 +683,7 @@ function render(){
 
 function renderLogin(){
   let html = '<div class="ft-login-wrap"><div class="ft-login-card">';
-  const treeTag = TREE_ID ? '<div style="font-size:12px;color:var(--gold);margin-bottom:10px;">🌳 الشجرة: '+esc(TREE_ID)+'</div>' : '';
-  html += treeTag;
-  const loginTitle = state.familyName ? 'شجرة عائلة '+esc(state.familyName) : 'شجرة العائلة';
+  const loginTitle = TREE_ID ? '🌳 شجرة عائلة آل عبدالعظيم' : '🌳 شجرة عائلة أحمد آل عبدالعظيم';
   if (state.mode === "checking"){
     html += '<div class="spin" style="font-size:24px;">⏳</div>';
   } else if (state.mode === "unsupported"){
@@ -993,7 +995,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !gestureActive) loadPeople();
   }, 7000);
   startPresenceHeartbeat();
 }
@@ -1204,6 +1206,7 @@ function renderDetailModal(p, isEditor){
       + '<button class="ft-btn secondary" id="editPersonBtn" data-id="'+p.id+'">تعديل</button>'
       + '<button class="ft-btn secondary" id="toggleHighlightBtn" data-id="'+p.id+'">'+(p.highlighted?'إلغاء التمييز':'🔴 تمييز بالأحمر')+'</button>'
       + '<button class="ft-btn secondary" id="exportBranchBtn" data-id="'+p.id+'">📤 تصدير الفرع</button>'
+      + '<button class="ft-btn secondary" id="importBranchHereBtn" data-id="'+p.id+'" data-name="'+esc(p.name)+'">📥 استيراد فرع هنا</button>'
       + '<button class="ft-btn danger" id="deletePersonBtn" data-id="'+p.id+'">🗑 حذف</button>'
       + '</div>';
   }
@@ -1552,7 +1555,7 @@ function renderJoinRequestsModal(){
       } else if (r.status === 'approved'){
         html += '<div style="color:var(--gold-light);font-size:12px;margin-bottom:4px;">✅ تمت الموافقة — الرمز المؤقت:</div>'
           + '<div class="ft-recovery-code" style="font-size:13px;padding:8px;">'+esc(r.tempCode||'')+'</div>'
-          + '<p style="font-size:11px;color:var(--cream-dim);margin-top:4px;">أرسل هذا الرمز مع البريد للشخص يدوياً (واتساب/إيميل).</p>';
+          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="copyWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ تم النسخ':'📋 نسخ بطاقة الترحيب كاملة')+'</button>';
       } else if (r.status === 'rejected'){
         html += '<div style="color:var(--danger);font-size:12px;">❌ مرفوض</div>';
       }
@@ -1583,14 +1586,15 @@ function renderBranchExportModal(){
   return html;
 }
 function renderBranchImportModal(){
-  const people = Object.values(state.people).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
-  const options = '<option value="">— بدون أب (فرع مستقل) —</option>' + people.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  const targetLabel = state.branchImportParentId
+    ? '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px 12px;font-size:13.5px;color:var(--gold-light);text-align:center;margin-bottom:14px;">سيُلحق الفرع تحت: <b>'+esc(state.branchImportParentName)+'</b></div>'
+    : '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px 12px;font-size:13.5px;color:var(--cream-dim);text-align:center;margin-bottom:14px;">سيُستورد كفرع مستقل (بدون أب)</div>';
   return '<div class="overlay" id="branchImportOverlay"><div class="modal" onclick="event.stopPropagation()">'
     + '<button class="modal-close" id="closeBranchImportBtn">✕</button>'
     + '<div class="detail-name" style="margin-bottom:6px;">📥 استيراد فرع</div>'
-    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">الصق نص الفرع المُصدَّر من الشجرة الأخرى.</p>'
-    + '<textarea id="branchImportTextarea" dir="ltr" placeholder="الصق النص هنا..." style="width:100%;height:140px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;"></textarea>'
-    + '<div class="ft-field" style="margin-top:12px;"><label>إلحاق الفرع تحت (اختياري)</label><select id="branchImportParentSelect">'+options+'</select></div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:10px;">الصق نص الفرع المُصدَّر من الشجرة الأخرى.</p>'
+    + targetLabel
+    + '<textarea id="branchImportTextarea" dir="ltr" placeholder="الصق النص هنا..." style="width:100%;height:140px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;">'+esc(state.branchImportText||'')+'</textarea>'
     + errBlock()
     + '<button class="ft-btn" id="submitBranchImportBtn" style="width:100%;justify-content:center;margin-top:8px;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الاستيراد...':'استيراد')+'</button>'
     + '</div></div>';
@@ -2009,6 +2013,25 @@ function wireAppEvents(layout){
       await loadJoinRequestsCount();
     };
     (state.joinRequestsList||[]).forEach(r => {
+      const copyWelcomeCardBtn = document.getElementById("copyWelcomeCardBtn_"+r.id);
+      if (copyWelcomeCardBtn) copyWelcomeCardBtn.onclick = async () => {
+        const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
+        const msg = "مرحباً بك "+r.name+" 🌳\n\n"
+          + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
+          + "للدخول أول مرة:\n"
+          + "1. افتح الرابط: "+link+"\n"
+          + "2. اضغط زر (الدخول ببريدك الإلكتروني)\n"
+          + "3. أدخل بريدك: "+r.email+"\n"
+          + "4. أدخل الرمز المؤقت التالي (صالح لأول دخول فقط): "+r.tempCode+"\n"
+          + "5. بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
+          + "من المرات القادمة، فقط أدخل بريدك وكلمة مرورك اللي اخترتها (نفس خطوة الدخول بالبريد الإلكتروني) — الرمز المؤقت لن يعمل بعد أول استخدام.";
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg);
+          state.copiedWelcomeId = r.id;
+          render();
+          setTimeout(() => { if (state.copiedWelcomeId === r.id){ state.copiedWelcomeId = null; if (state.showJoinRequestsModal) render(); } }, 3000);
+        } catch(_) {}
+      };
       const approveBtn = document.getElementById("approveJoinBtn_"+r.id);
       if (approveBtn) approveBtn.onclick = async () => {
         state.busy = true; render();
@@ -2138,16 +2161,18 @@ function wireAppEvents(layout){
   }
 
   const showBranchImportBtn = document.getElementById("showBranchImportBtn");
-  if (showBranchImportBtn) showBranchImportBtn.onclick = () => { state.showBranchImportModal = true; state.err=""; render(); };
+  if (showBranchImportBtn) showBranchImportBtn.onclick = () => { state.showBranchImportModal = true; state.branchImportText=""; state.branchImportParentId=""; state.branchImportParentName=""; state.err=""; render(); };
   const branchImportOverlay = document.getElementById("branchImportOverlay");
   if (branchImportOverlay){
     branchImportOverlay.onclick = () => { state.showBranchImportModal=false; state.err=""; render(); };
     const closeBranchImportBtn = document.getElementById("closeBranchImportBtn");
     if (closeBranchImportBtn) closeBranchImportBtn.onclick = () => { state.showBranchImportModal=false; state.err=""; render(); };
+    const branchImportTextareaEl = document.getElementById("branchImportTextarea");
+    if (branchImportTextareaEl) branchImportTextareaEl.oninput = e => { state.branchImportText = e.target.value; };
     const submitBranchImportBtn = document.getElementById("submitBranchImportBtn");
     if (submitBranchImportBtn) submitBranchImportBtn.onclick = async () => {
       const text = val("branchImportTextarea");
-      const targetParentId = val("branchImportParentSelect") || null;
+      const targetParentId = state.branchImportParentId || null;
       if (!text.trim()){ state.err = "الصق نص الفرع أولاً."; render(); return; }
       let parsed;
       try { parsed = JSON.parse(text); } catch(e){ state.err = "تعذّر قراءة النص — تأكد إنه منسوخ كامل."; render(); return; }
@@ -2389,6 +2414,16 @@ function wireAppEvents(layout){
       state.branchDeleteConfirm = false;
       state.copiedFlag = false;
       state.showBranchExportModal = true;
+      render();
+    };
+    const importBranchHereBtn = document.getElementById("importBranchHereBtn");
+    if (importBranchHereBtn) importBranchHereBtn.onclick = () => {
+      state.branchImportParentId = importBranchHereBtn.dataset.id;
+      state.branchImportParentName = importBranchHereBtn.dataset.name;
+      state.branchImportText = "";
+      state.err = "";
+      state.detailId = null;
+      state.showBranchImportModal = true;
       render();
     };
     const toggleHighlightBtn = document.getElementById("toggleHighlightBtn");
