@@ -1357,7 +1357,7 @@ function renderQuotesModal(){
     html += '<div style="display:flex;flex-direction:column;gap:8px;">';
     state.quotes.forEach((q,i) => {
       html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:8px 10px;">'
-        + '<div style="flex:1;font-size:13px;">'+esc(q)+'</div>'
+        + '<div style="flex:1;font-size:13px;white-space:pre-wrap;">'+esc(q)+'</div>'
         + '<button class="ft-btn secondary" style="padding:4px 10px;font-size:12px;" id="editQuote_'+i+'">✏️ تعديل</button>'
         + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delQuote_'+i+'">حذف</button>'
         + '</div>';
