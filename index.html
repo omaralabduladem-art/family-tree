@@ -373,6 +373,11 @@ const state = {
   showJoinRequestsModal: false,
   joinRequestsList: null,
   pendingJoinCount: 0,
+  showBranchExportModal: false,
+  branchExportJson: "",
+  branchExportRootId: null,
+  branchDeleteConfirm: false,
+  showBranchImportModal: false,
 };
 
 const app = document.getElementById("app");
@@ -495,6 +500,21 @@ function siblingsUnder(people, parentId, excludeId){
   return Object.values(people)
     .filter(p => (p.parentId||null) === key && p.id !== excludeId)
     .sort((a,b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
+}
+function collectBranch(rootId){
+  const result = [];
+  const queue = [rootId];
+  const seen = new Set();
+  while (queue.length){
+    const id = queue.shift();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const p = state.people[id];
+    if (!p) continue;
+    result.push(p);
+    Object.values(state.people).forEach(c => { if (c.parentId === id) queue.push(c.id); });
+  }
+  return result;
 }
 function scrollToPerson(id){
   requestAnimationFrame(() => {
@@ -1043,6 +1063,7 @@ function renderApp(){
     + (isAdmin ? '<button id="exportDataBtn">💾 نسخة احتياطية</button>' : '')
     + (isAdmin ? '<button id="importDataBtn">📥 استيراد ملف</button>' : '')
     + (isAdmin ? '<button id="importPasteBtn">📋 استيراد بلصق نص</button>' : '')
+    + (isEditor ? '<button id="showBranchImportBtn">📥 استيراد فرع من شجرة أخرى</button>' : '')
     + (isAdmin ? '<input type="file" accept="application/json,.json" id="importDataInput" style="display:none;">' : '')
     + '<button id="logoutBtn">🚪 خروج</button>'
     + '</div></div></div>'
@@ -1118,6 +1139,8 @@ function renderApp(){
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
   if (isAdmin && state.showExportModal) html += renderExportModal();
   if (isAdmin && state.showImportPasteModal) html += renderImportPasteModal();
+  if (isEditor && state.showBranchExportModal) html += renderBranchExportModal();
+  if (isEditor && state.showBranchImportModal) html += renderBranchImportModal();
 
   const prevWrap = document.getElementById("canvasWrap");
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
@@ -1180,6 +1203,7 @@ function renderDetailModal(p, isEditor){
       + '<button class="ft-btn" id="addChildBtn" data-id="'+p.id+'">➕ إضافة ابن/ابنة</button>'
       + '<button class="ft-btn secondary" id="editPersonBtn" data-id="'+p.id+'">تعديل</button>'
       + '<button class="ft-btn secondary" id="toggleHighlightBtn" data-id="'+p.id+'">'+(p.highlighted?'إلغاء التمييز':'🔴 تمييز بالأحمر')+'</button>'
+      + '<button class="ft-btn secondary" id="exportBranchBtn" data-id="'+p.id+'">📤 تصدير الفرع</button>'
       + '<button class="ft-btn danger" id="deletePersonBtn" data-id="'+p.id+'">🗑 حذف</button>'
       + '</div>';
   }
@@ -1538,6 +1562,38 @@ function renderJoinRequestsModal(){
   }
   html += errBlock() + '</div></div>';
   return html;
+}
+
+function renderBranchExportModal(){
+  const rootName = state.people[state.branchExportRootId] ? state.people[state.branchExportRootId].name : '';
+  let html = '<div class="overlay" id="branchExportOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeBranchExportBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📤 تصدير فرع: '+esc(rootName)+'</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">انسخ النص، وألصقه في نافذة "استيراد فرع" بالشجرة الأخرى.</p>'
+    + '<button class="ft-btn" id="copyBranchExportBtn" style="width:100%;justify-content:center;margin-bottom:10px;">'+(state.copiedFlag?'✅ تم النسخ':'📋 نسخ إلى الحافظة')+'</button>'
+    + '<textarea id="branchExportTextarea" readonly dir="ltr" style="width:100%;height:140px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;">'+esc(state.branchExportJson)+'</textarea>'
+    + '<div style="border-top:1px solid rgba(196,104,95,0.3);margin-top:16px;padding-top:12px;">';
+  if (!state.branchDeleteConfirm){
+    html += '<button class="ft-btn danger" id="deleteBranchBtn" style="width:100%;justify-content:center;">🗑 حذف هذا الفرع من هذه الشجرة</button>';
+  } else {
+    html += '<p style="color:var(--danger);font-size:13px;text-align:center;margin-bottom:10px;">⚠️ هذا سيحذف <b>'+esc(rootName)+'</b> وكل ذريته من هذه الشجرة نهائياً. متأكد؟</p>'
+      + '<div class="modal-actions"><button class="ft-btn danger" id="confirmDeleteBranchBtn">نعم، احذف</button><button class="ft-btn secondary" id="cancelDeleteBranchBtn">إلغاء</button></div>';
+  }
+  html += '</div>' + errBlock() + '</div></div>';
+  return html;
+}
+function renderBranchImportModal(){
+  const people = Object.values(state.people).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+  const options = '<option value="">— بدون أب (فرع مستقل) —</option>' + people.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  return '<div class="overlay" id="branchImportOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeBranchImportBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📥 استيراد فرع</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">الصق نص الفرع المُصدَّر من الشجرة الأخرى.</p>'
+    + '<textarea id="branchImportTextarea" dir="ltr" placeholder="الصق النص هنا..." style="width:100%;height:140px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:10px;color:var(--cream);font-family:monospace;font-size:11px;"></textarea>'
+    + '<div class="ft-field" style="margin-top:12px;"><label>إلحاق الفرع تحت (اختياري)</label><select id="branchImportParentSelect">'+options+'</select></div>'
+    + errBlock()
+    + '<button class="ft-btn" id="submitBranchImportBtn" style="width:100%;justify-content:center;margin-top:8px;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الاستيراد...':'استيراد')+'</button>'
+    + '</div></div>';
 }
 
 function renderChangePwModal(){
@@ -2041,6 +2097,84 @@ function wireAppEvents(layout){
     });
   }
 
+  const branchExportOverlay = document.getElementById("branchExportOverlay");
+  if (branchExportOverlay){
+    branchExportOverlay.onclick = () => { state.showBranchExportModal=false; state.branchDeleteConfirm=false; state.copiedFlag=false; render(); };
+    const closeBranchExportBtn = document.getElementById("closeBranchExportBtn");
+    if (closeBranchExportBtn) closeBranchExportBtn.onclick = () => { state.showBranchExportModal=false; state.branchDeleteConfirm=false; state.copiedFlag=false; render(); };
+    const copyBranchExportBtn = document.getElementById("copyBranchExportBtn");
+    if (copyBranchExportBtn) copyBranchExportBtn.onclick = async () => {
+      const ta = document.getElementById("branchExportTextarea");
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(state.branchExportJson);
+        } else if (ta) { ta.focus(); ta.select(); document.execCommand("copy"); }
+        state.copiedFlag = true;
+      } catch(e){
+        if (ta){ ta.focus(); ta.select(); try { document.execCommand("copy"); state.copiedFlag = true; } catch(_) {} }
+      }
+      renderApp();
+      setTimeout(() => { state.copiedFlag = false; if (state.showBranchExportModal) renderApp(); }, 3000);
+    };
+    const deleteBranchBtn = document.getElementById("deleteBranchBtn");
+    if (deleteBranchBtn) deleteBranchBtn.onclick = () => { state.branchDeleteConfirm = true; render(); };
+    const cancelDeleteBranchBtn = document.getElementById("cancelDeleteBranchBtn");
+    if (cancelDeleteBranchBtn) cancelDeleteBranchBtn.onclick = () => { state.branchDeleteConfirm = false; render(); };
+    const confirmDeleteBranchBtn = document.getElementById("confirmDeleteBranchBtn");
+    if (confirmDeleteBranchBtn) confirmDeleteBranchBtn.onclick = async () => {
+      state.busy = true; render();
+      try {
+        const branch = collectBranch(state.branchExportRootId);
+        for (const p of branch){
+          delete state.people[p.id];
+          await fbDelete(PATH_PREFIX+"persons/"+p.id);
+        }
+        state.showBranchExportModal = false;
+        state.branchDeleteConfirm = false;
+        state.detailId = null;
+      } catch(e){ state.err = "تعذّر حذف الفرع."; }
+      state.busy = false; render();
+    };
+  }
+
+  const showBranchImportBtn = document.getElementById("showBranchImportBtn");
+  if (showBranchImportBtn) showBranchImportBtn.onclick = () => { state.showBranchImportModal = true; state.err=""; render(); };
+  const branchImportOverlay = document.getElementById("branchImportOverlay");
+  if (branchImportOverlay){
+    branchImportOverlay.onclick = () => { state.showBranchImportModal=false; state.err=""; render(); };
+    const closeBranchImportBtn = document.getElementById("closeBranchImportBtn");
+    if (closeBranchImportBtn) closeBranchImportBtn.onclick = () => { state.showBranchImportModal=false; state.err=""; render(); };
+    const submitBranchImportBtn = document.getElementById("submitBranchImportBtn");
+    if (submitBranchImportBtn) submitBranchImportBtn.onclick = async () => {
+      const text = val("branchImportTextarea");
+      const targetParentId = val("branchImportParentSelect") || null;
+      if (!text.trim()){ state.err = "الصق نص الفرع أولاً."; render(); return; }
+      let parsed;
+      try { parsed = JSON.parse(text); } catch(e){ state.err = "تعذّر قراءة النص — تأكد إنه منسوخ كامل."; render(); return; }
+      if (!parsed || !Array.isArray(parsed.people) || !parsed.rootId){ state.err = "تنسيق غير صالح — تأكد إنك نسخت نص الفرع كاملاً."; render(); return; }
+      state.busy = true; state.err=""; render();
+      try {
+        const idMap = {};
+        parsed.people.forEach(p => { idMap[p.id] = uid(); });
+        for (const p of parsed.people){
+          const newParentId = (p.id === parsed.rootId)
+            ? targetParentId
+            : (p.parentId && idMap[p.parentId] ? idMap[p.parentId] : targetParentId);
+          const newPerson = {
+            ...p,
+            id: idMap[p.id],
+            parentId: newParentId,
+            createdAt: Date.now(),
+          };
+          delete newPerson.order;
+          await savePersonCloud(newPerson);
+        }
+        state.showBranchImportModal = false;
+      } catch(e){ state.err = "تعذّر إتمام الاستيراد."; }
+      state.busy = false; render();
+    };
+  }
+
   const changePwBtn = document.getElementById("changePwBtn");
   if (changePwBtn) changePwBtn.onclick = () => { state.showChangePw = true; state.err=""; render(); };
   const manageQuotesBtn = document.getElementById("manageQuotesBtn");
@@ -2246,6 +2380,17 @@ function wireAppEvents(layout){
     if (editBtn) editBtn.onclick = () => { state.editId = editBtn.dataset.id; state._editForm=null; render(); };
     const delBtn = document.getElementById("deletePersonBtn");
     if (delBtn) delBtn.onclick = () => { state.confirmDeleteId = delBtn.dataset.id; render(); };
+    const exportBranchBtn = document.getElementById("exportBranchBtn");
+    if (exportBranchBtn) exportBranchBtn.onclick = () => {
+      const rootId = exportBranchBtn.dataset.id;
+      const branch = collectBranch(rootId);
+      state.branchExportJson = JSON.stringify({rootId, people: branch}, null, 2);
+      state.branchExportRootId = rootId;
+      state.branchDeleteConfirm = false;
+      state.copiedFlag = false;
+      state.showBranchExportModal = true;
+      render();
+    };
     const toggleHighlightBtn = document.getElementById("toggleHighlightBtn");
     if (toggleHighlightBtn) toggleHighlightBtn.onclick = async () => {
       const id = toggleHighlightBtn.dataset.id;
