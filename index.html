@@ -382,6 +382,7 @@ const state = {
   showBranchImportModal: false,
   copiedWelcomeId: null,
   copiedTempCodeId: null,
+  copiedInviteCard: false,
   branchImportText: "",
   branchImportParentId: "",
   branchImportParentName: "",
@@ -613,6 +614,87 @@ function wrapCanvasText(ctx,text,cx,y,maxWidth,lineHeight){
   lines.forEach((ln,i) => ctx.fillText(ln, cx, y+i*lineHeight));
   return lines.length*lineHeight;
 }
+function buildInviteMessage(treeTitle, link){
+  return "🌳 دعوة للانضمام لـ"+treeTitle+"\n\n"
+    + "يسعدنا دعوتك للانضمام لشجرة العائلة، والمساهمة في توثيق تاريخها معنا.\n\n"
+    + "اضغط الرابط التالي للبدء:\n"
+    + link+"\n\n"
+    + "ثم اضغط زر (طلب تسجيل جديد)، واملأ بياناتك — وسيتواصل معك المسؤول بعد الموافقة.";
+}
+async function buildInviteCardCanvas(treeTitle, link){
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
+  const W = 720, H = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, "#0F332C");
+  grad.addColorStop(1, "#0B2B26");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+  const pad = 36;
+  ctx.fillStyle = "#133830";
+  roundRectPath(ctx, pad, pad, W-pad*2, H-pad*2, 22);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(201,161,90,0.45)";
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, pad, pad, W-pad*2, H-pad*2, 22);
+  ctx.stroke();
+  ctx.direction = "rtl";
+  ctx.textAlign = "center";
+  const contentW = W-pad*2-70;
+  let y = pad + 90;
+  ctx.font = "60px serif";
+  ctx.fillText("\uD83C\uDF33", W/2, y);
+  y += 70;
+  ctx.fillStyle = "#E9CD8C";
+  ctx.font = "700 30px Tajawal, Arial, sans-serif";
+  ctx.fillText(treeTitle, W/2, y);
+  y += 56;
+  ctx.fillStyle = "#F2EBDA";
+  ctx.font = "700 26px Tajawal, Arial, sans-serif";
+  ctx.fillText("دعوة للانضمام \uD83C\uDF89", W/2, y);
+  y += 42;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 19px Tajawal, Arial, sans-serif";
+  y += wrapCanvasText(ctx, "يسعدنا دعوتك للانضمام لشجرة العائلة، والمساهمة في توثيق تاريخها معنا.", W/2, y, contentW, 27);
+  y += 40;
+
+  // link box
+  const linkBoxTop = y;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 15px Tajawal, Arial, sans-serif";
+  ctx.fillText("رابط الشجرة", W/2, y+22);
+  ctx.direction = "ltr";
+  ctx.fillStyle = "#F2EBDA";
+  ctx.font = "400 13px monospace";
+  const linkTextH = wrapCanvasText(ctx, link, W/2, y+44, contentW, 17);
+  ctx.direction = "rtl";
+  ctx.strokeStyle = "#C9A15A";
+  ctx.setLineDash([8,6]);
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, pad+30, linkBoxTop, W-pad*2-60, linkTextH+40, 10);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  y = linkBoxTop + linkTextH + 40 + 40;
+
+  ctx.fillStyle = "#E9CD8C";
+  ctx.font = "700 19px Tajawal, Arial, sans-serif";
+  ctx.fillText("خطوات الانضمام", W/2, y);
+  y += 32;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 17px Tajawal, Arial, sans-serif";
+  const steps = [
+    "١. اضغط الرابط أعلاه",
+    "٢. اضغط زر (طلب تسجيل جديد)",
+    "٣. املأ اسمك وبريدك ورقم جوالك",
+    "٤. انتظر موافقة المسؤول",
+  ];
+  steps.forEach(s => { y += wrapCanvasText(ctx, s, W/2, y, contentW, 25) + 4; });
+
+  return canvas;
+}
+
 function buildWelcomeMessage(r){
   const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "") + (TREE_ID ? "&" : "?") + "le="+encodeURIComponent(r.email)+"&lc="+encodeURIComponent(r.tempCode);
   return "مرحباً بك "+r.name+" 🌳\n\n"
@@ -1208,6 +1290,7 @@ function renderApp(){
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
     + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
     + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
+    + (isAdmin ? '<button id="inviteCardBtn">'+(state.copiedInviteCard?'✅ جاهزة — الصقها مع الصورة':'📇 بطاقة دعوة للانضمام')+'</button>' : '')
     + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة</button>' : '')
     + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
     + (state.session.emailIdentity ? '<button id="showMyMessagesBtn">📥 رسائلي</button>' : '')
@@ -2138,6 +2221,34 @@ function wireAppEvents(layout){
     };
   }
 
+  const inviteCardBtn = document.getElementById("inviteCardBtn");
+  if (inviteCardBtn) inviteCardBtn.onclick = async () => {
+    try {
+      const treeTitle = TREE_ID ? "شجرة عائلة آل عبدالعظيم" : "شجرة عائلة أحمد آل عبدالعظيم";
+      const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
+      const canvas = await buildInviteCardCanvas(treeTitle, link);
+      const msg = buildInviteMessage(treeTitle, link);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const file = new File([blob], "بطاقة_دعوة.png", {type:"image/png"});
+        let shared = false;
+        if (navigator.canShare && navigator.canShare({files:[file]})){
+          try { await navigator.share({files:[file], title:"دعوة للانضمام", text: msg}); shared = true; } catch(_) {}
+        }
+        if (!shared){
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "بطاقة_دعوة.png";
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
+        }
+        state.copiedInviteCard = true;
+        render();
+        setTimeout(() => { state.copiedInviteCard = false; render(); }, 4000);
+      }, "image/png");
+    } catch(e){ state.err = "تعذّر إنشاء بطاقة الدعوة."; render(); }
+  };
   const showJoinRequestsBtn = document.getElementById("showJoinRequestsBtn");
   if (showJoinRequestsBtn) showJoinRequestsBtn.onclick = () => {
     state.showJoinRequestsModal = true; state.joinRequestsList = null; state.err=""; render();
