@@ -379,6 +379,7 @@ const state = {
   branchDeleteConfirm: false,
   showBranchImportModal: false,
   copiedWelcomeId: null,
+  copiedTempCodeId: null,
   branchImportText: "",
   branchImportParentId: "",
   branchImportParentName: "",
@@ -1703,6 +1704,7 @@ function renderJoinRequestsModal(){
       } else if (r.status === 'approved'){
         html += '<div style="color:var(--gold-light);font-size:12px;margin-bottom:4px;">✅ تمت الموافقة — الرمز المؤقت:</div>'
           + '<div class="ft-recovery-code" style="font-size:13px;padding:8px;">'+esc(r.tempCode||'')+'</div>'
+          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:6px;font-size:12px;" id="copyTempCodeBtn_'+r.id+'">'+(state.copiedTempCodeId===r.id?'✅ تم النسخ':'📋 نسخ الرمز فقط')+'</button>'
           + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="downloadWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ جاهزة — الصقها مع الصورة':'🖼️ بطاقة الترحيب (صورة + بيانات)')+'</button>';
       } else if (r.status === 'rejected'){
         html += '<div style="color:var(--danger);font-size:12px;">❌ مرفوض</div>';
@@ -2161,6 +2163,15 @@ function wireAppEvents(layout){
       await loadJoinRequestsCount();
     };
     (state.joinRequestsList||[]).forEach(r => {
+      const copyTempCodeBtn = document.getElementById("copyTempCodeBtn_"+r.id);
+      if (copyTempCodeBtn) copyTempCodeBtn.onclick = async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(r.tempCode||"");
+          state.copiedTempCodeId = r.id;
+          render();
+          setTimeout(() => { if (state.copiedTempCodeId === r.id){ state.copiedTempCodeId = null; if (state.showJoinRequestsModal) render(); } }, 2500);
+        } catch(_) {}
+      };
       const downloadWelcomeCardBtn = document.getElementById("downloadWelcomeCardBtn_"+r.id);
       if (downloadWelcomeCardBtn) downloadWelcomeCardBtn.onclick = async () => {
         try {
