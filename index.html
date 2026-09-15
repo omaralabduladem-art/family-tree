@@ -584,6 +584,101 @@ async function saveQuotes(list){
     state.currentQuote = list[Math.floor(Math.random()*list.length)];
   }
 }
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function wrapCanvasText(ctx,text,cx,y,maxWidth,lineHeight){
+  const words = text.split(" ");
+  let line = "";
+  const lines = [];
+  for (const w of words){
+    const test = line ? line+" "+w : w;
+    if (ctx.measureText(test).width > maxWidth && line){
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  lines.forEach((ln,i) => ctx.fillText(ln, cx, y+i*lineHeight));
+  return lines.length*lineHeight;
+}
+function buildWelcomeMessage(r){
+  const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
+  return "مرحباً بك "+r.name+" 🌳\n\n"
+    + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
+    + "للدخول أول مرة:\n"
+    + "1. افتح الرابط: "+link+"\n"
+    + "2. اضغط زر (الدخول ببريدك الإلكتروني)\n"
+    + "3. أدخل بريدك: "+r.email+"\n"
+    + "4. أدخل الرمز المؤقت التالي (صالح لأول دخول فقط): "+r.tempCode+"\n"
+    + "5. بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
+    + "من المرات القادمة، فقط أدخل بريدك وكلمة مرورك اللي اخترتها (نفس خطوة الدخول بالبريد الإلكتروني) — الرمز المؤقت لن يعمل بعد أول استخدام.";
+}
+async function buildWelcomeCardCanvas(r, treeTitle){
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
+  const W = 720, H = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, "#0F332C");
+  grad.addColorStop(1, "#0B2B26");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+  const pad = 36;
+  ctx.fillStyle = "#133830";
+  roundRectPath(ctx, pad, pad, W-pad*2, H-pad*2, 22);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(201,161,90,0.45)";
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, pad, pad, W-pad*2, H-pad*2, 22);
+  ctx.stroke();
+  ctx.direction = "rtl";
+  ctx.textAlign = "center";
+  let y = pad + 70;
+  ctx.font = "52px serif";
+  ctx.fillText("🌳", W/2, y);
+  y += 64;
+  ctx.fillStyle = "#E9CD8C";
+  ctx.font = "700 30px Tajawal, Arial, sans-serif";
+  ctx.fillText(treeTitle, W/2, y);
+  y += 64;
+  ctx.fillStyle = "#F2EBDA";
+  ctx.font = "700 28px Tajawal, Arial, sans-serif";
+  ctx.fillText("مرحباً بك "+r.name, W/2, y);
+  y += 46;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 20px Tajawal, Arial, sans-serif";
+  y += wrapCanvasText(ctx, "تم قبول طلب انضمامك للشجرة بنجاح 🎉", W/2, y, W-pad*2-60, 28);
+  y += 30;
+  ctx.strokeStyle = "#C9A15A";
+  ctx.setLineDash([8,6]);
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, pad+30, y, W-pad*2-60, 96, 14);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.direction = "ltr";
+  ctx.fillStyle = "#E9CD8C";
+  ctx.font = "700 32px monospace";
+  ctx.fillText(r.tempCode, W/2, y+60);
+  ctx.direction = "rtl";
+  y += 140;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 19px Tajawal, Arial, sans-serif";
+  y += wrapCanvasText(ctx, "استخدم بريدك ("+r.email+") مع هذا الرمز لأول دخول فقط، ثم اختر كلمة مرور خاصة بك.", W/2, y, W-pad*2-60, 27);
+  y += 20;
+  wrapCanvasText(ctx, "من المرات القادمة يكفي بريدك وكلمة مرورك.", W/2, y, W-pad*2-60, 27);
+  return canvas;
+}
+
 async function fetchAndDecryptMessages(){
   const raw = await fbGet(PATH_PREFIX+"messages");
   const list = [];
@@ -1555,7 +1650,8 @@ function renderJoinRequestsModal(){
       } else if (r.status === 'approved'){
         html += '<div style="color:var(--gold-light);font-size:12px;margin-bottom:4px;">✅ تمت الموافقة — الرمز المؤقت:</div>'
           + '<div class="ft-recovery-code" style="font-size:13px;padding:8px;">'+esc(r.tempCode||'')+'</div>'
-          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="copyWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ تم النسخ':'📋 نسخ بطاقة الترحيب كاملة')+'</button>';
+          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="copyWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ تم النسخ':'📋 نسخ بطاقة الترحيب كاملة')+'</button>'
+          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:6px;font-size:12.5px;" id="downloadWelcomeCardBtn_'+r.id+'">🖼️ تحميل/مشاركة كصورة</button>';
       } else if (r.status === 'rejected'){
         html += '<div style="color:var(--danger);font-size:12px;">❌ مرفوض</div>';
       }
@@ -2015,22 +2111,34 @@ function wireAppEvents(layout){
     (state.joinRequestsList||[]).forEach(r => {
       const copyWelcomeCardBtn = document.getElementById("copyWelcomeCardBtn_"+r.id);
       if (copyWelcomeCardBtn) copyWelcomeCardBtn.onclick = async () => {
-        const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
-        const msg = "مرحباً بك "+r.name+" 🌳\n\n"
-          + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
-          + "للدخول أول مرة:\n"
-          + "1. افتح الرابط: "+link+"\n"
-          + "2. اضغط زر (الدخول ببريدك الإلكتروني)\n"
-          + "3. أدخل بريدك: "+r.email+"\n"
-          + "4. أدخل الرمز المؤقت التالي (صالح لأول دخول فقط): "+r.tempCode+"\n"
-          + "5. بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
-          + "من المرات القادمة، فقط أدخل بريدك وكلمة مرورك اللي اخترتها (نفس خطوة الدخول بالبريد الإلكتروني) — الرمز المؤقت لن يعمل بعد أول استخدام.";
+        const msg = buildWelcomeMessage(r);
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg);
           state.copiedWelcomeId = r.id;
           render();
           setTimeout(() => { if (state.copiedWelcomeId === r.id){ state.copiedWelcomeId = null; if (state.showJoinRequestsModal) render(); } }, 3000);
         } catch(_) {}
+      };
+      const downloadWelcomeCardBtn = document.getElementById("downloadWelcomeCardBtn_"+r.id);
+      if (downloadWelcomeCardBtn) downloadWelcomeCardBtn.onclick = async () => {
+        try {
+          const treeTitle = TREE_ID ? "شجرة عائلة آل عبدالعظيم" : "شجرة عائلة أحمد آل عبدالعظيم";
+          const canvas = await buildWelcomeCardCanvas(r, treeTitle);
+          canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const file = new File([blob], "بطاقة_ترحيب.png", {type:"image/png"});
+            const msg = buildWelcomeMessage(r);
+            if (navigator.canShare && navigator.canShare({files:[file]})){
+              try { await navigator.share({files:[file], title:"بطاقة ترحيب", text: msg}); return; } catch(_) {}
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "بطاقة_ترحيب.png";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
+          }, "image/png");
+        } catch(e){ state.err = "تعذّر إنشاء الصورة."; render(); }
       };
       const approveBtn = document.getElementById("approveJoinBtn_"+r.id);
       if (approveBtn) approveBtn.onclick = async () => {
