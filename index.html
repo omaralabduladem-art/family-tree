@@ -1650,8 +1650,7 @@ function renderJoinRequestsModal(){
       } else if (r.status === 'approved'){
         html += '<div style="color:var(--gold-light);font-size:12px;margin-bottom:4px;">✅ تمت الموافقة — الرمز المؤقت:</div>'
           + '<div class="ft-recovery-code" style="font-size:13px;padding:8px;">'+esc(r.tempCode||'')+'</div>'
-          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="copyWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ تم النسخ':'📋 نسخ بطاقة الترحيب كاملة')+'</button>'
-          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:6px;font-size:12.5px;" id="downloadWelcomeCardBtn_'+r.id+'">🖼️ تحميل/مشاركة كصورة</button>';
+          + '<button class="ft-btn secondary" style="width:100%;justify-content:center;margin-top:8px;font-size:12.5px;" id="downloadWelcomeCardBtn_'+r.id+'">'+(state.copiedWelcomeId===r.id?'✅ جاهزة — الصقها مع الصورة':'🖼️ بطاقة الترحيب (صورة + بيانات)')+'</button>';
       } else if (r.status === 'rejected'){
         html += '<div style="color:var(--danger);font-size:12px;">❌ مرفوض</div>';
       }
@@ -2109,16 +2108,6 @@ function wireAppEvents(layout){
       await loadJoinRequestsCount();
     };
     (state.joinRequestsList||[]).forEach(r => {
-      const copyWelcomeCardBtn = document.getElementById("copyWelcomeCardBtn_"+r.id);
-      if (copyWelcomeCardBtn) copyWelcomeCardBtn.onclick = async () => {
-        const msg = buildWelcomeMessage(r);
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg);
-          state.copiedWelcomeId = r.id;
-          render();
-          setTimeout(() => { if (state.copiedWelcomeId === r.id){ state.copiedWelcomeId = null; if (state.showJoinRequestsModal) render(); } }, 3000);
-        } catch(_) {}
-      };
       const downloadWelcomeCardBtn = document.getElementById("downloadWelcomeCardBtn_"+r.id);
       if (downloadWelcomeCardBtn) downloadWelcomeCardBtn.onclick = async () => {
         try {
@@ -2128,15 +2117,21 @@ function wireAppEvents(layout){
             if (!blob) return;
             const file = new File([blob], "بطاقة_ترحيب.png", {type:"image/png"});
             const msg = buildWelcomeMessage(r);
+            let shared = false;
             if (navigator.canShare && navigator.canShare({files:[file]})){
-              try { await navigator.share({files:[file], title:"بطاقة ترحيب", text: msg}); return; } catch(_) {}
+              try { await navigator.share({files:[file], title:"بطاقة ترحيب", text: msg}); shared = true; } catch(_) {}
             }
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url; a.download = "بطاقة_ترحيب.png";
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-            try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
+            if (!shared){
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url; a.download = "بطاقة_ترحيب.png";
+              document.body.appendChild(a); a.click(); document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(url), 5000);
+              try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
+            }
+            state.copiedWelcomeId = r.id;
+            render();
+            setTimeout(() => { if (state.copiedWelcomeId === r.id){ state.copiedWelcomeId = null; if (state.showJoinRequestsModal) render(); } }, 4000);
           }, "image/png");
         } catch(e){ state.err = "تعذّر إنشاء الصورة."; render(); }
       };
