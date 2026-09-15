@@ -624,7 +624,8 @@ function buildWelcomeMessage(r){
 }
 async function buildWelcomeCardCanvas(r, treeTitle){
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
-  const W = 720, H = 900;
+  const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
+  const W = 720, H = 1360;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -643,39 +644,91 @@ async function buildWelcomeCardCanvas(r, treeTitle){
   ctx.stroke();
   ctx.direction = "rtl";
   ctx.textAlign = "center";
-  let y = pad + 70;
-  ctx.font = "52px serif";
-  ctx.fillText("🌳", W/2, y);
-  y += 64;
+  const contentW = W-pad*2-70;
+  let y = pad + 66;
+  ctx.font = "48px serif";
+  ctx.fillText("\uD83C\uDF33", W/2, y);
+  y += 56;
   ctx.fillStyle = "#E9CD8C";
-  ctx.font = "700 30px Tajawal, Arial, sans-serif";
+  ctx.font = "700 27px Tajawal, Arial, sans-serif";
   ctx.fillText(treeTitle, W/2, y);
-  y += 64;
+  y += 50;
   ctx.fillStyle = "#F2EBDA";
-  ctx.font = "700 28px Tajawal, Arial, sans-serif";
+  ctx.font = "700 26px Tajawal, Arial, sans-serif";
   ctx.fillText("مرحباً بك "+r.name, W/2, y);
-  y += 46;
+  y += 38;
   ctx.fillStyle = "#C9C0AC";
-  ctx.font = "400 20px Tajawal, Arial, sans-serif";
-  y += wrapCanvasText(ctx, "تم قبول طلب انضمامك للشجرة بنجاح 🎉", W/2, y, W-pad*2-60, 28);
-  y += 30;
+  ctx.font = "400 18px Tajawal, Arial, sans-serif";
+  y += wrapCanvasText(ctx, "تم قبول طلب انضمامك للشجرة بنجاح \uD83C\uDF89", W/2, y, contentW, 25);
+  y += 24;
+
+  // email box
+  ctx.strokeStyle = "rgba(201,161,90,0.35)";
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.5;
+  roundRectPath(ctx, pad+30, y, W-pad*2-60, 56, 10);
+  ctx.stroke();
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 15px Tajawal, Arial, sans-serif";
+  ctx.fillText("البريد الإلكتروني", W/2, y+22);
+  ctx.direction = "ltr";
+  ctx.fillStyle = "#F2EBDA";
+  ctx.font = "700 18px Tajawal, Arial, sans-serif";
+  ctx.fillText(r.email, W/2, y+45);
+  ctx.direction = "rtl";
+  y += 78;
+
+  // temp code box
   ctx.strokeStyle = "#C9A15A";
   ctx.setLineDash([8,6]);
   ctx.lineWidth = 2;
-  roundRectPath(ctx, pad+30, y, W-pad*2-60, 96, 14);
+  roundRectPath(ctx, pad+30, y, W-pad*2-60, 100, 14);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 15px Tajawal, Arial, sans-serif";
+  ctx.fillText("الرمز المؤقت (لأول دخول فقط)", W/2, y+26);
   ctx.direction = "ltr";
   ctx.fillStyle = "#E9CD8C";
-  ctx.font = "700 32px monospace";
-  ctx.fillText(r.tempCode, W/2, y+60);
+  ctx.font = "700 30px monospace";
+  ctx.fillText(r.tempCode, W/2, y+68);
   ctx.direction = "rtl";
-  y += 140;
+  y += 128;
+
+  // link box
+  const linkBoxTop = y;
   ctx.fillStyle = "#C9C0AC";
-  ctx.font = "400 19px Tajawal, Arial, sans-serif";
-  y += wrapCanvasText(ctx, "استخدم بريدك ("+r.email+") مع هذا الرمز لأول دخول فقط، ثم اختر كلمة مرور خاصة بك.", W/2, y, W-pad*2-60, 27);
-  y += 20;
-  wrapCanvasText(ctx, "من المرات القادمة يكفي بريدك وكلمة مرورك.", W/2, y, W-pad*2-60, 27);
+  ctx.font = "400 15px Tajawal, Arial, sans-serif";
+  ctx.fillText("رابط الشجرة", W/2, y+22);
+  ctx.direction = "ltr";
+  ctx.fillStyle = "#F2EBDA";
+  ctx.font = "400 13px monospace";
+  const linkTextH = wrapCanvasText(ctx, link, W/2, y+44, contentW, 17);
+  ctx.direction = "rtl";
+  ctx.strokeStyle = "rgba(201,161,90,0.35)";
+  roundRectPath(ctx, pad+30, linkBoxTop, W-pad*2-60, linkTextH+40, 10);
+  ctx.stroke();
+  y = linkBoxTop + linkTextH + 40 + 30;
+
+  // instructions
+  ctx.fillStyle = "#E9CD8C";
+  ctx.font = "700 19px Tajawal, Arial, sans-serif";
+  ctx.fillText("خطوات الدخول أول مرة", W/2, y);
+  y += 32;
+  ctx.fillStyle = "#C9C0AC";
+  ctx.font = "400 17px Tajawal, Arial, sans-serif";
+  const steps = [
+    "١. افتح الرابط أعلاه",
+    "٢. اضغط زر (الدخول ببريدك الإلكتروني)",
+    "٣. أدخل بريدك والرمز المؤقت أعلاه",
+    "٤. اختر كلمة مرور خاصة بك",
+  ];
+  steps.forEach(s => { y += wrapCanvasText(ctx, s, W/2, y, contentW, 25) + 4; });
+  y += 16;
+  ctx.fillStyle = "#8FA39D";
+  ctx.font = "400 15px Tajawal, Arial, sans-serif";
+  wrapCanvasText(ctx, "من المرات القادمة يكفي بريدك وكلمة مرورك فقط.", W/2, y, contentW, 21);
+
   return canvas;
 }
 
