@@ -708,9 +708,9 @@ function buildWelcomeMessage(r){
     + "للدخول أول مرة، بمجرد الضغط على الرابط التالي ستدخل مباشرة:\n"
     + link+"\n\n"
     + "بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
-    + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك اللي اخترتها من صفحة الدخول العادية.\n\n"
+    + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك التي اخترتها من صفحة الدخول العادية.\n\n"
     + "ملاحظة: الشجرة تعمل على الجوال، لكنها تظهر بوضوح وتصفّح أفضل على الكمبيوتر.\n\n"
-    + "(لو الرابط ما اشتغل تلقائياً لأي سبب، افتح الموقع واضغط زر \"الدخول ببريدك الإلكتروني\"، وأدخل بريدك مع هذا الرمز المؤقت: "+r.tempCode+")";
+    + "(لو الرابط لم يعمل تلقائياً لأي سبب، افتح الموقع واضغط زر \"الدخول ببريدك الإلكتروني\"، وأدخل بريدك مع هذا الرمز المؤقت: "+r.tempCode+")";
 }
 async function buildWelcomeCardCanvas(r, treeTitle){
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(_) {} }
@@ -960,11 +960,12 @@ function renderLogin(){
       + errBlock()
       + '<button class="ft-btn" id="emailSetPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ ودخول')+'</button>';
   } else if (state.mode === "join-request"){
-    html += '<h2>طلب تسجيل جديد</h2><p>املأ بياناتك، وسيتواصل معك المسؤول بعد الموافقة على طلبك.</p>'
+    html += '<h2>طلب تسجيل جديد</h2>'
       + (state.joinRequestSent
         ? '<p style="color:var(--gold-light);text-align:center;margin:20px 0;">✅ تم إرسال طلبك بنجاح. سيتواصل معك المسؤول قريباً.</p>'
           + '<button class="ft-btn secondary" id="backFromJoinBtn" style="width:100%;justify-content:center;">رجوع لتسجيل الدخول</button>'
-        : field("joinName","الاسم","text")
+        : '<p>املأ بياناتك، وسيتواصل معك المسؤول بعد الموافقة على طلبك.</p>'
+          + field("joinName","الاسم","text")
           + field("joinEmail","البريد الإلكتروني","text","example@email.com")
           + field("joinPhone","رقم الجوال","text","05xxxxxxxx")
           + errBlock()
