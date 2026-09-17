@@ -702,7 +702,7 @@ function buildWelcomeMessage(r){
   const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "") + (TREE_ID ? "&" : "?") + "le="+encodeURIComponent(r.email)+"&lc="+encodeURIComponent(r.tempCode);
   return "مرحباً بك "+r.name+" 🌳\n\n"
     + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
-    + "للدخول أول مرة، بس اضغط الرابط التالي وبيدخلك تلقائياً:\n"
+    + "للدخول أول مرة، بس اضغط الرابط التالي وستدخل مباشرة:\n"
     + link+"\n\n"
     + "بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
     + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك اللي اخترتها من صفحة الدخول العادية.\n\n"
@@ -803,7 +803,7 @@ async function buildWelcomeCardCanvas(r, treeTitle){
   ctx.fillStyle = "#C9C0AC";
   ctx.font = "400 17px Tajawal, Arial, sans-serif";
   const steps = [
-    "١. اضغط الرابط أعلاه — بيدخلك تلقائياً",
+    "١. اضغط الرابط أعلاه — ستدخل مباشرة",
     "٢. اختر كلمة مرور خاصة بك عند الطلب",
   ];
   steps.forEach(s => { y += wrapCanvasText(ctx, s, W/2, y, contentW, 25) + 4; });
