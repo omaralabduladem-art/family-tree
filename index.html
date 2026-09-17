@@ -54,13 +54,13 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .legend button:hover{border-color:var(--gold);color:var(--gold-light);}
 #canvasWrap{position:relative;flex:1;min-height:0;overflow:auto;touch-action:none;}
 #canvas{position:relative;transform-origin:top right;}
-.node{position:absolute;width:90px;text-align:center;cursor:pointer;background:linear-gradient(160deg, rgba(31,100,150,0.4), rgba(23,82,67,0.6));border:2px solid var(--male);border-radius:12px;padding:7px 6px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
+.node{position:absolute;width:90px;min-height:52px;display:flex;flex-direction:column;justify-content:center;text-align:center;cursor:pointer;background:linear-gradient(160deg, rgba(31,100,150,0.4), rgba(23,82,67,0.6));border:2px solid var(--male);border-radius:12px;padding:7px 6px;box-shadow:0 3px 10px rgba(0,0,0,0.3);box-sizing:border-box;}
 .node.female{border-color:var(--female);background:linear-gradient(160deg, rgba(160,45,90,0.4), rgba(23,82,67,0.6));}
 .node.deceased{border-color:#A3A3A3;background:rgba(80,80,80,0.65);}
 .node.deceased .name{color:#E2E2E2;}
 .node.deceased .years{color:#B5B5B5;}
 .node.match{border-color:var(--gold-light);box-shadow:0 0 14px 2px var(--gold-light);}
-.node .name{font-size:13.5px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.node .name{font-size:14.5px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .node .years{font-size:11px;color:var(--cream-dim);margin-top:2px;}
 .genlabel{position:absolute;font-size:12.5px;font-weight:600;color:var(--gold-light);opacity:.9;right:10px;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,0.6);}
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--cream-dim);}
@@ -113,7 +113,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
   .legend{gap:8px;}
   .legend button{padding:7px 12px;font-size:12.5px;min-height:36px;}
   .node{width:78px;padding:6px 5px;}
-  .node .name{font-size:12.5px;}
+  .node .name{font-size:13.5px;}
   .node .years{font-size:10.5px;}
   .zoom{left:12px;bottom:20px;gap:8px;}
   .zoom button{width:46px;height:46px;font-size:20px;}
@@ -138,7 +138,7 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 @media (max-width: 360px){
   h1{font-size:22px;}
   .node{width:70px;}
-  .node .name{font-size:11.5px;}
+  .node .name{font-size:12.5px;}
 }
 
 /* Hamburger-style dropdown for secondary header buttons: invisible wrapper on desktop, collapsible on mobile */
@@ -706,6 +706,7 @@ function buildWelcomeMessage(r){
     + link+"\n\n"
     + "بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
     + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك اللي اخترتها من صفحة الدخول العادية.\n\n"
+    + "ملاحظة: الشجرة تعمل على الجوال، لكنها تظهر بوضوح وتصفّح أفضل على الكمبيوتر.\n\n"
     + "(لو الرابط ما اشتغل تلقائياً لأي سبب، افتح الموقع واضغط زر \"الدخول ببريدك الإلكتروني\"، وأدخل بريدك مع هذا الرمز المؤقت: "+r.tempCode+")";
 }
 async function buildWelcomeCardCanvas(r, treeTitle){
@@ -809,7 +810,9 @@ async function buildWelcomeCardCanvas(r, treeTitle){
   y += 16;
   ctx.fillStyle = "#8FA39D";
   ctx.font = "400 15px Tajawal, Arial, sans-serif";
-  wrapCanvasText(ctx, "من المرات القادمة يكفي بريدك وكلمة مرورك فقط.", W/2, y, contentW, 21);
+  y += wrapCanvasText(ctx, "من المرات القادمة يكفي بريدك وكلمة مرورك فقط.", W/2, y, contentW, 21);
+  y += 14;
+  wrapCanvasText(ctx, "ملاحظة: تعمل على الجوال، وتظهر بوضوح وتصفّح أفضل على الكمبيوتر.", W/2, y, contentW, 20);
 
   return canvas;
 }
@@ -1219,8 +1222,11 @@ function wirePasswordToggles(){
   document.querySelectorAll(".pw-toggle").forEach(btn => btn.onclick = () => {
     const input = document.getElementById(btn.dataset.target);
     if (!input) return;
+    const selStart = input.selectionStart, selEnd = input.selectionEnd;
     if (input.type === "password"){ input.type = "text"; btn.textContent = "🙈"; }
     else { input.type = "password"; btn.textContent = "👁️"; }
+    input.focus();
+    try { input.setSelectionRange(selStart, selEnd); } catch(_) {}
   });
 }
 function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ""; }
@@ -1348,8 +1354,9 @@ function renderApp(){
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
+      const yearsText = esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''));
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
-        + '<div class="name">'+esc(p.name)+'</div><div class="years">'+'\u2067'+esc(p.birthYear||'')+(p.deathYear?' – '+esc(p.deathYear):(p.deceased?' – متوفى':''))+'\u2069'+'</div></div>';
+        + '<div class="name">'+esc(p.name)+'</div>'+(yearsText?'<div class="years">'+'\u2067'+yearsText+'\u2069'+'</div>':'')+'</div>';
     });
     html += '</div></div>';
   }
