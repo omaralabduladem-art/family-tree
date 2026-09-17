@@ -213,6 +213,9 @@ function forgetSession(){
 function loadRememberedSession(){
   try { const raw = localStorage.getItem(REMEMBER_KEY); return raw ? JSON.parse(raw) : null; } catch(_) { return null; }
 }
+const LAST_EMAIL_KEY = "ft_last_email_"+(TREE_ID||"default");
+function rememberEmailAddr(email){ try { localStorage.setItem(LAST_EMAIL_KEY, email); } catch(_) {} }
+function loadRememberedEmailAddr(){ try { return localStorage.getItem(LAST_EMAIL_KEY) || ""; } catch(_) { return ""; } }
 const ROW_HEIGHT = 110, COL_WIDTH = 105, NODE_W = 90, NODE_H = 52;
 const PAN_SPEED = 1; // true 1:1 pixel tracking with the finger/mouse. Do NOT use a fraction here: canvasSizer is explicitly resized to layout.width*zoom / layout.height*zoom on every render, so the scroll-space already equals real screen pixels 1:1 at any zoom level. Any value below 1 makes the tree visibly lag behind the finger/cursor and feel unstable — this was the root cause of the long-standing pan-stability complaints, not a speed-tuning issue.
 
@@ -702,7 +705,7 @@ function buildWelcomeMessage(r){
   const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "") + (TREE_ID ? "&" : "?") + "le="+encodeURIComponent(r.email)+"&lc="+encodeURIComponent(r.tempCode);
   return "مرحباً بك "+r.name+" 🌳\n\n"
     + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
-    + "للدخول أول مرة، بس اضغط الرابط التالي وستدخل مباشرة:\n"
+    + "للدخول أول مرة، بمجرد الضغط على الرابط التالي ستدخل مباشرة:\n"
     + link+"\n\n"
     + "بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
     + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك اللي اخترتها من صفحة الدخول العادية.\n\n"
@@ -945,7 +948,7 @@ function renderLogin(){
       + '<button class="ft-btn" id="newPassBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ والدخول')+'</button>';
   } else if (state.mode === "email-login"){
     html += '<h2>الدخول بالبريد الإلكتروني</h2><p>أدخل بريدك وكلمة المرور (أو الرمز المؤقت الذي أرسله لك المسؤول).</p>'
-      + field("emailLoginEmail","البريد الإلكتروني","text","example@email.com")
+      + field("emailLoginEmail","البريد الإلكتروني","text","example@email.com",loadRememberedEmailAddr())
       + field("emailLoginCode","كلمة المرور / الرمز المؤقت","password")
       + errBlock()
       + '<button class="ft-btn" id="emailLoginSubmitBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ التحقق...':'دخول')+'</button>'
@@ -1018,6 +1021,7 @@ async function attemptEmailLogin(email, code){
     const cryptoKey = await importDataKey(rawKeyB64);
     state.session = {role:"viewer", cryptoKey, rawKeyB64, emailIdentity: rec.email || email};
     rememberSession("viewer", rawKeyB64, rec.email || email);
+    rememberEmailAddr(rec.email || email);
     state.mode = "app";
     render();
     incrementCounter(PATH_PREFIX+"stats/totalLogins");
@@ -1165,6 +1169,7 @@ function wireLoginEvents(){
       const cryptoKey = await importDataKey(state.pendingRawKeyB64);
       state.session = {role:"viewer", cryptoKey, rawKeyB64: state.pendingRawKeyB64, emailIdentity: state.pendingEmailAddr};
       rememberSession("viewer", state.pendingRawKeyB64, state.pendingEmailAddr);
+      rememberEmailAddr(state.pendingEmailAddr);
       state.pendingEmailKey = null; state.pendingEmailAddr = ""; state.pendingRawKeyB64 = null;
       state.mode = "app";
       render();
