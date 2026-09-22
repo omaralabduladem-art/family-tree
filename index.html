@@ -334,6 +334,7 @@ const state = {
   inviteList: null,
   inviteName: "",
   inviteDupAck: "",
+  inviteLoggedMsg: "",
   highlightGen: null,
   zoom: 1,
   detailId: null,
@@ -1904,6 +1905,9 @@ function renderInviteModal(){
     + errBlock()
     + (state.copiedInviteCard ? '<div style="color:var(--gold-light);font-size:13px;text-align:center;margin-bottom:10px;">✅ أُنشئت البطاقة وحُفظ الاسم في السجل</div>' : '')
     + '<button class="ft-btn'+(confirmingDup?' danger':'')+'" id="sendInviteBtn" style="width:100%;justify-content:center;margin-bottom:16px;">'+(confirmingDup?'نعم، أرسل الدعوة مرة ثانية':'📇 إنشاء البطاقة وإرسالها')+'</button>'
+    + '<button class="ft-btn secondary" id="logOnlyInviteBtn" style="width:100%;justify-content:center;margin:-8px 0 6px;">📝 تسجيل فقط (بدون إرسال بطاقة)</button>'
+    + '<div style="font-size:11.5px;color:var(--cream-dim);text-align:center;margin-bottom:16px;">لإضافة من دعوتهم سابقاً قبل وجود هذا السجل</div>'
+    + (state.inviteLoggedMsg ? '<div style="color:var(--gold-light);font-size:13px;text-align:center;margin-bottom:12px;">'+esc(state.inviteLoggedMsg)+'</div>' : '')
     + '<div style="font-weight:700;color:var(--gold-light);font-size:14px;margin-bottom:8px;">من دعوتهم'+(state.inviteList&&state.inviteList.length?' ('+state.inviteList.length+')':'')+'</div>';
   if (state.inviteList === null){
     html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
@@ -1913,7 +1917,7 @@ function renderInviteModal(){
     html += '<div style="display:flex;flex-direction:column;gap:6px;">';
     state.inviteList.forEach(inv => {
       html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:7px 10px;">'
-        + '<div style="flex:1;"><div style="font-size:13.5px;">'+esc(inv.name)+'</div><div style="font-size:11px;color:var(--cream-dim);">'+esc(inviteDateStr(inv.invitedAt))+'</div></div>'
+        + '<div style="flex:1;"><div style="font-size:13.5px;">'+esc(inv.name)+'</div><div style="font-size:11px;color:var(--cream-dim);">'+esc(inviteDateStr(inv.invitedAt))+(inv.loggedOnly?' · سُجّل يدوياً':'')+'</div></div>'
         + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delInviteBtn_'+inv.id+'">حذف</button>'
         + '</div>';
     });
@@ -2410,7 +2414,7 @@ function wireAppEvents(layout){
 
   const inviteCardBtn = document.getElementById("inviteCardBtn");
   if (inviteCardBtn) inviteCardBtn.onclick = () => {
-    state.showInviteModal = true; state.inviteList = null; state.inviteName = ""; state.inviteDupAck = ""; state.copiedInviteCard = false; state.err = ""; render();
+    state.showInviteModal = true; state.inviteList = null; state.inviteName = ""; state.inviteDupAck = ""; state.inviteLoggedMsg = ""; state.copiedInviteCard = false; state.err = ""; render();
     (async () => {
       try { state.inviteList = await fetchInvites(); } catch(_) { state.inviteList = []; }
       if (state.showInviteModal) render();
@@ -2426,6 +2430,7 @@ function wireAppEvents(layout){
     if (inviteNameInput) inviteNameInput.oninput = e => {
       state.inviteName = e.target.value;
       state.inviteDupAck = "";
+      if (state.inviteLoggedMsg){ state.inviteLoggedMsg = ""; }
       const warn = document.getElementById("inviteDupWarn");
       if (warn) warn.innerHTML = inviteDupWarningHtml(findInviteDup(state.inviteName));
       const sendBtn = document.getElementById("sendInviteBtn");
@@ -2474,6 +2479,25 @@ function wireAppEvents(layout){
           setTimeout(() => { state.copiedInviteCard = false; if (state.showInviteModal) render(); }, 4000);
         }, "image/png");
       } catch(e){ state.err = "تعذّر إنشاء بطاقة الدعوة."; render(); }
+    };
+    const logOnlyInviteBtn = document.getElementById("logOnlyInviteBtn");
+    if (logOnlyInviteBtn) logOnlyInviteBtn.onclick = async () => {
+      const name = ((document.getElementById("inviteNameInput")||{}).value || "").trim();
+      state.inviteName = name; state.err = ""; state.inviteLoggedMsg = "";
+      if (!name){ state.err = "اكتب اسم الشخص أولاً."; render(); return; }
+      const dup = findInviteDup(name);
+      if (dup){ state.err = "«"+dup.name+"» مسجّل مسبقاً في السجل."; render(); return; }
+      logOnlyInviteBtn.disabled = true;
+      try {
+        const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name, invitedAt: Date.now(), loggedOnly: true}));
+        await fbSet(PATH_PREFIX+"invites/"+uid(), cipher);
+        state.inviteList = await fetchInvites();
+        state.inviteName = ""; state.inviteDupAck = "";
+        state.inviteLoggedMsg = "✅ تم تسجيل «"+name+"»";
+      } catch(_) { state.err = "تعذّر التسجيل."; }
+      render();
+      const inp = document.getElementById("inviteNameInput");
+      if (inp) inp.focus();
     };
     (state.inviteList||[]).forEach(inv => {
       const delBtn = document.getElementById("delInviteBtn_"+inv.id);
