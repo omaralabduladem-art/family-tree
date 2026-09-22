@@ -486,6 +486,24 @@ function normalizeArabic(s){
     .replace(/\s+/g, " ")
     .trim();
 }
+const NASAB_WORDS = ["بن","بنت","ابن","ابنه"];
+function stripNasabWords(s){
+  return normalizeArabic(s).split(" ").filter(w => w && NASAB_WORDS.indexOf(w) === -1).join(" ");
+}
+// Full-name search: "محمد بن علي بن أحمد" (with or without بن) matches the person whose own name
+// is محمد, father علي, grandfather أحمد. A single word keeps the word-start match on the person's own name.
+function personMatchesSearch(p, term){
+  if (!p || !term) return false;
+  const t = stripNasabWords(term);
+  if (!t) return false;
+  if (t.indexOf(" ") === -1 && nameMatchesSearch(p.name, t)) return true;
+  const parts = []; let cur = p, guard = 0;
+  while (cur && guard < 100){
+    parts.push(stripNasabWords(cur.name));
+    cur = cur.parentId ? state.people[cur.parentId] : null; guard++;
+  }
+  return parts.join(" ").indexOf(t) === 0;
+}
 function nameMatchesSearch(name, term){
   const n = normalizeArabic(name), t = normalizeArabic(term);
   if (!n || !t) return false;
@@ -1408,7 +1426,7 @@ function renderApp(){
     Object.values(state.people).forEach(p=>{
       const pos = layout.positions[p.id]; if (!pos) return;
       const searchTerm = (state.searchApplied||"").trim();
-      const match = (searchTerm && nameMatchesSearch(p.name, searchTerm)) || (state.highlightGen && pos.gen === state.highlightGen);
+      const match = (searchTerm && personMatchesSearch(p, searchTerm)) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deceased || (p.deathYear && String(p.deathYear).trim());
       const isHighlighted = !!p.highlighted;
       const isPicked = (state.kinshipPickA===p.id || state.kinshipPickB===p.id);
@@ -2108,7 +2126,7 @@ function wireAppEvents(layout){
   const applySearchHighlights = () => {
     const term = (state.searchApplied||"").trim();
     document.querySelectorAll(".node").forEach(n => {
-      n.classList.toggle("match", !!(term && nameMatchesSearch(n.dataset.name, term)));
+      n.classList.toggle("match", !!(term && personMatchesSearch(state.people[n.dataset.id], term)));
     });
   };
   const runSearch = () => {
@@ -2120,7 +2138,7 @@ function wireAppEvents(layout){
     const term = state.searchApplied;
     if (!term) return;
     const searchLayout = computeLayout(state.people);
-    const matches = Object.values(state.people).filter(p => nameMatchesSearch(p.name, term));
+    const matches = Object.values(state.people).filter(p => personMatchesSearch(p, term));
     if (matches.length){
       matches.sort((a,b) => (searchLayout.positions[a.id]?.gen||1) - (searchLayout.positions[b.id]?.gen||1));
       scrollToPerson(matches[0].id);
