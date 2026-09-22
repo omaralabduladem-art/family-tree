@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -49,6 +48,11 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .role-badge{background:rgba(201,161,90,0.18);border:1px solid rgba(201,161,90,0.4);border-radius:999px;padding:2px 10px;font-size:11px;color:var(--gold-light);}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin-top:10px;}
 .search{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid rgba(201,161,90,0.3);border-radius:999px;padding:7px 14px;min-width:180px;}
+.search-go{background:none;border:none;color:var(--gold-light);cursor:pointer;font-size:14px;padding:0 2px;flex-shrink:0;}
+.menu-summary{position:relative;}
+.menu-summary .badge-count{position:absolute;top:-5px;right:-5px;margin:0;}
+.new-tag{display:inline-block;background:#FF3B30;color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;margin-inline-start:6px;vertical-align:middle;}
+.search-toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid rgba(201,161,90,0.5);color:var(--cream);padding:8px 16px;border-radius:8px;z-index:60;font-size:13px;}
 .search input{background:transparent;border:none;outline:none;color:var(--cream);font-family:'Tajawal',sans-serif;font-size:13px;width:100%;direction:rtl;unicode-bidi:plaintext;}
 .legend{display:flex;gap:6px;justify-content:center;align-items:flex-start;flex-wrap:wrap;margin-top:10px;}
 .legend button{background:rgba(23,82,67,0.5);border:1px solid rgba(201,161,90,0.25);color:var(--cream-dim);border-radius:8px;padding:4px 9px;font-size:11px;font-family:'Tajawal',sans-serif;cursor:pointer;}
@@ -322,6 +326,14 @@ const state = {
   session: null, // {role, cryptoKey}
   people: {},
   search: "",
+  searchApplied: "",
+  unreadMsgCount: 0,
+  lastSeenMsgAt: 0,
+  msgNewThreshold: 0,
+  showInviteModal: false,
+  inviteList: null,
+  inviteName: "",
+  inviteDupAck: "",
   highlightGen: null,
   zoom: 1,
   detailId: null,
@@ -454,10 +466,34 @@ document.addEventListener("click", (e) => {
   }
 });
 
+function showSearchToast(msg){
+  const old = document.getElementById("searchToast");
+  if (old) old.remove();
+  const t = document.createElement("div");
+  t.id = "searchToast"; t.className = "search-toast"; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { if (t.parentNode) t.remove(); }, 2200);
+}
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function normalizeArabic(s){
+  return (s||"")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/\u0640/g, "")
+    .replace(/[\u0622\u0623\u0625\u0671]/g, "\u0627")
+    .replace(/\u0649/g, "\u064A")
+    .replace(/\u0629/g, "\u0647")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 function nameMatchesSearch(name, term){
-  if (!name || !term) return false;
-  return name.split(/\s+/).some(word => word.indexOf(term) === 0);
+  const n = normalizeArabic(name), t = normalizeArabic(term);
+  if (!n || !t) return false;
+  const words = n.split(" ");
+  for (let i=0; i<words.length; i++){
+    if (words.slice(i).join(" ").indexOf(t) === 0) return true;
+  }
+  return false;
 }
 
 // ---------- Layout ----------
@@ -846,6 +882,14 @@ async function fetchAndDecryptMessages(){
   list.sort((a,b) => (b.sentAt||0) - (a.sentAt||0));
   return list;
 }
+async function loadUnreadMessagesCount(){
+  try {
+    const lastSeen = await fbGet(PATH_PREFIX+"adminState/lastSeenMessagesAt");
+    state.lastSeenMsgAt = typeof lastSeen === "number" ? lastSeen : 0;
+    const list = await fetchAndDecryptMessages();
+    state.unreadMsgCount = list.filter(m => (m.sentAt||0) > state.lastSeenMsgAt).length;
+  } catch(_) {}
+}
 async function loadJoinRequestsCount(){
   try {
     const raw = await fbGet(PATH_PREFIX+"joinRequests");
@@ -892,7 +936,7 @@ async function loadPeople(){
     }
     if (state.familyName) updateAppTitle(state.familyName);
     await loadQuotes();
-    if (state.session.role === "admin") await loadJoinRequestsCount();
+    if (state.session.role === "admin"){ await loadJoinRequestsCount(); await loadUnreadMessagesCount(); }
     render();
   } catch(e){
     state.err = "تعذّر تحميل البيانات.";
@@ -1250,7 +1294,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !state.showInviteModal && !gestureActive) loadPeople();
   }, 7000);
   startPresenceHeartbeat();
 }
@@ -1306,15 +1350,15 @@ function renderApp(){
     + (state.syncing ? ' <span class="spin">⏳</span>' : '')
     + '</div>'
     + '<div class="userbar"><span class="role-badge">'+(isAdmin?'👑 مسؤول أول':(isEditor?'✏️ محرِّر':'👁️ مشاهد فقط'))+'</span>'
-    + '<div class="menu-details"><button type="button" class="menu-summary" id="menuToggleBtn">⋯</button><div class="menu-buttons" style="display:'+(state.menuOpen?'flex':'none')+';">'
+    + '<div class="menu-details"><button type="button" class="menu-summary" id="menuToggleBtn">⋯'+((isAdmin && (state.pendingJoinCount+state.unreadMsgCount)>0)?'<span class="badge-count">'+(state.pendingJoinCount+state.unreadMsgCount)+'</span>':'')+'</button><div class="menu-buttons" style="display:'+(state.menuOpen?'flex':'none')+';">'
     + '<button id="syncNowBtn">🔄 تحديث الآن</button>'
     + (isAdmin ? '<button id="changePwBtn">🔑 تغيير كلمات المرور</button>' : '')
     + (isAdmin ? '<button id="showRecoveryBtn">🔐 توليد رمز استرداد جديد</button>' : '')
     + (isAdmin ? '<button id="editFamilyNameBtn">🖋 اسم العائلة</button>' : '')
     + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
     + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
-    + (isAdmin ? '<button id="inviteCardBtn">'+(state.copiedInviteCard?'✅ جاهزة — الصقها مع الصورة':'📇 بطاقة دعوة للانضمام')+'</button>' : '')
-    + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة</button>' : '')
+    + (isAdmin ? '<button id="inviteCardBtn">📇 بطاقة دعوة للانضمام</button>' : '')
+    + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة'+(state.unreadMsgCount>0?' <span class="badge-count">'+state.unreadMsgCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
     + (state.session.emailIdentity ? '<button id="showMyMessagesBtn">📥 رسائلي</button>' : '')
     + (!isAdmin && !state.session.emailIdentity ? '<button id="showCheckMessagesBtn">📥 التحقق من ردود رسائلي</button>' : '')
@@ -1331,7 +1375,7 @@ function renderApp(){
     + '<button class="ft-btn secondary" id="showStatsBtn">📊 إحصائيات</button>'
     + '<button class="ft-btn secondary" id="showKinshipBtn">🔗 القرابة بين شخصين</button>'
     + '<button class="ft-btn secondary" id="showContactBtn">📨 راسلنا</button>'
-    + '<div class="search"><input id="searchInput" dir="rtl" placeholder="ابحث عن اسم..." value="'+esc(state.search)+'"></div>'
+    + '<div class="search"><input id="searchInput" dir="rtl" enterkeyhint="search" placeholder="اكتب الاسم ثم اضغط Enter" value="'+esc(state.search)+'"><button type="button" class="search-go" id="searchGoBtn" title="بحث">🔍</button></div>'
     + '</div>'
     + '<div class="legend">';
   for (let g=1; g<=layout.maxGen; g++) html += '<button data-gen="'+g+'">'+esc(genLabel(g))+'</button>';
@@ -1363,7 +1407,7 @@ function renderApp(){
     for (let g=1; g<=layout.maxGen; g++) html += '<div class="genlabel" style="top:'+(pxY(layout.genRowStart[g])-30)+'px;">'+esc(genLabel(g))+'</div>';
     Object.values(state.people).forEach(p=>{
       const pos = layout.positions[p.id]; if (!pos) return;
-      const searchTerm = state.search.trim();
+      const searchTerm = (state.searchApplied||"").trim();
       const match = (searchTerm && nameMatchesSearch(p.name, searchTerm)) || (state.highlightGen && pos.gen === state.highlightGen);
       const isDeceased = p.deceased || (p.deathYear && String(p.deathYear).trim());
       const isHighlighted = !!p.highlighted;
@@ -1394,6 +1438,7 @@ function renderApp(){
   if (state.session.emailIdentity && state.showMyMessagesModal) html += renderMyMessagesModal();
   if (isAdmin && state.showEmailUsersModal) html += renderEmailUsersModal();
   if (isAdmin && state.showJoinRequestsModal) html += renderJoinRequestsModal();
+  if (isAdmin && state.showInviteModal) html += renderInviteModal();
   if (state.showCheckMessagesModal) html += renderCheckMessagesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
@@ -1406,8 +1451,22 @@ function renderApp(){
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
   const prevModal = document.querySelector(".overlay .modal");
   const prevModalScroll = prevModal ? prevModal.scrollTop : null;
+  const activeEl = document.activeElement;
+  let prevFocus = null;
+  if (activeEl && activeEl.id && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") && app.contains(activeEl)){
+    prevFocus = {id: activeEl.id, value: activeEl.value, start: null, end: null};
+    try { prevFocus.start = activeEl.selectionStart; prevFocus.end = activeEl.selectionEnd; } catch(_) {}
+  }
   app.innerHTML = html;
   wireAppEvents(layout);
+  if (prevFocus){
+    const el = document.getElementById(prevFocus.id);
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")){
+      if (el.value !== prevFocus.value && el.type !== "file") el.value = prevFocus.value;
+      el.focus({preventScroll:true});
+      try { if (prevFocus.start !== null) el.setSelectionRange(prevFocus.start, prevFocus.end); } catch(_) {}
+    }
+  }
   if (prevScroll){
     const newWrap = document.getElementById("canvasWrap");
     if (newWrap){ newWrap.scrollLeft = prevScroll.left; newWrap.scrollTop = prevScroll.top; }
@@ -1683,7 +1742,7 @@ function renderMessagesModal(){
     state.messagesList.forEach(m => {
       const dateStr = new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric', hour:'numeric', minute:'numeric'}).format(new Date(m.sentAt));
       const emailHtml = m.email ? ('<span dir="ltr" style="unicode-bidi:plaintext;">'+esc(m.email)+'</span> <button class="ft-btn secondary" style="padding:1px 8px;font-size:10px;" id="copyEmailBtn_'+m.id+'">📋 نسخ</button>') : '';
-      const identityHtml = (m.name?esc(m.name):'') + (m.name && m.email ? ' — ' : '') + emailHtml + (!m.name && !m.email ? 'بدون اسم' : '');
+      const identityHtml = 'من: <b>' + (m.name?esc(m.name):'') + '</b>' + (m.name && m.email ? ' — ' : '') + emailHtml + (!m.name && !m.email ? 'بدون اسم' : '') + ((m.sentAt||0) > state.msgNewThreshold ? '<span class="new-tag">جديد</span>' : '');
       html += '<div style="background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:10px 12px;">'
         + '<div style="font-size:12px;color:var(--gold-light);">'+identityHtml+'</div>'
         + '<div style="font-size:11px;color:var(--cream-dim);margin-bottom:4px;white-space:nowrap;">'+dateStr+'</div>'
@@ -1788,6 +1847,63 @@ function renderCheckMessagesModal(){
   return html;
 }
 
+async function fetchInvites(){
+  const raw = await fbGet(PATH_PREFIX+"invites");
+  const list = [];
+  if (raw){
+    for (const [id, cipher] of Object.entries(raw)){
+      try {
+        const obj = JSON.parse(await decryptText(state.session.cryptoKey, cipher));
+        obj.id = id;
+        list.push(obj);
+      } catch(_) {}
+    }
+  }
+  list.sort((a,b) => (b.invitedAt||0) - (a.invitedAt||0));
+  return list;
+}
+function findInviteDup(name){
+  const n = normalizeArabic(name);
+  if (!n || !state.inviteList) return null;
+  return state.inviteList.find(inv => normalizeArabic(inv.name) === n) || null;
+}
+function inviteDateStr(ts){
+  try { return new Intl.DateTimeFormat('ar-SA', {year:'numeric', month:'long', day:'numeric'}).format(new Date(ts)); } catch(_) { return ""; }
+}
+function inviteDupWarningHtml(dup){
+  if (!dup) return "";
+  return '<div style="background:rgba(196,104,95,0.15);border:1px solid var(--danger);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--cream);margin-bottom:10px;">⚠️ سبق دعوة <b>'+esc(dup.name)+'</b> بتاريخ '+esc(inviteDateStr(dup.invitedAt))+'</div>';
+}
+function renderInviteModal(){
+  const dup = findInviteDup(state.inviteName);
+  const confirmingDup = dup && state.inviteDupAck === normalizeArabic(state.inviteName);
+  let html = '<div class="overlay" id="inviteOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeInviteBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📇 بطاقة دعوة للانضمام</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اكتب اسم من ستدعوه، ليُحفظ في السجل وتعرف لاحقاً أنك دعوته.</p>'
+    + '<div class="ft-field"><label>اسم الشخص</label><input id="inviteNameInput" dir="rtl" value="'+esc(state.inviteName)+'" placeholder="مثال: خالد بن محمد" autocomplete="off"></div>'
+    + '<div id="inviteDupWarn">'+inviteDupWarningHtml(dup)+'</div>'
+    + errBlock()
+    + (state.copiedInviteCard ? '<div style="color:var(--gold-light);font-size:13px;text-align:center;margin-bottom:10px;">✅ أُنشئت البطاقة وحُفظ الاسم في السجل</div>' : '')
+    + '<button class="ft-btn'+(confirmingDup?' danger':'')+'" id="sendInviteBtn" style="width:100%;justify-content:center;margin-bottom:16px;">'+(confirmingDup?'نعم، أرسل الدعوة مرة ثانية':'📇 إنشاء البطاقة وإرسالها')+'</button>'
+    + '<div style="font-weight:700;color:var(--gold-light);font-size:14px;margin-bottom:8px;">من دعوتهم'+(state.inviteList&&state.inviteList.length?' ('+state.inviteList.length+')':'')+'</div>';
+  if (state.inviteList === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ التحميل...</div>';
+  } else if (state.inviteList.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لم تُرسل أي دعوة بعد.</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+    state.inviteList.forEach(inv => {
+      html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:7px 10px;">'
+        + '<div style="flex:1;"><div style="font-size:13.5px;">'+esc(inv.name)+'</div><div style="font-size:11px;color:var(--cream-dim);">'+esc(inviteDateStr(inv.invitedAt))+'</div></div>'
+        + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delInviteBtn_'+inv.id+'">حذف</button>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
 function renderJoinRequestsModal(){
   let html = '<div class="overlay" id="joinRequestsOverlay"><div class="modal" onclick="event.stopPropagation()">'
     + '<button class="modal-close" id="closeJoinRequestsBtn">✕</button>'
@@ -1989,27 +2105,45 @@ function wireAppEvents(layout){
     });
   });
   const searchInput = document.getElementById("searchInput");
-  if (searchInput) searchInput.oninput = e => {
-    state.search = e.target.value;
-    state.highlightGen = null;
-    const term = state.search.trim();
+  const applySearchHighlights = () => {
+    const term = (state.searchApplied||"").trim();
     document.querySelectorAll(".node").forEach(n => {
-      const isMatch = term && nameMatchesSearch(n.dataset.name, term);
-      n.classList.toggle("match", !!isMatch);
+      n.classList.toggle("match", !!(term && nameMatchesSearch(n.dataset.name, term)));
     });
-    if (searchScrollTimer) clearTimeout(searchScrollTimer);
-    if (term){
-      searchScrollTimer = setTimeout(() => {
-        searchScrollTimer = null;
-        const searchLayout = computeLayout(state.people);
-        const matches = Object.values(state.people).filter(p => nameMatchesSearch(p.name, term));
-        if (matches.length){
-          matches.sort((a,b) => (searchLayout.positions[a.id]?.gen||1) - (searchLayout.positions[b.id]?.gen||1));
-          scrollToPerson(matches[0].id);
-        }
-      }, 600);
+  };
+  const runSearch = () => {
+    if (!searchInput) return;
+    state.search = searchInput.value;
+    state.searchApplied = state.search.trim();
+    state.highlightGen = null;
+    applySearchHighlights();
+    const term = state.searchApplied;
+    if (!term) return;
+    const searchLayout = computeLayout(state.people);
+    const matches = Object.values(state.people).filter(p => nameMatchesSearch(p.name, term));
+    if (matches.length){
+      matches.sort((a,b) => (searchLayout.positions[a.id]?.gen||1) - (searchLayout.positions[b.id]?.gen||1));
+      scrollToPerson(matches[0].id);
+      searchInput.blur();
+      showSearchToast(matches.length===1 ? "نتيجة واحدة" : matches.length+" نتائج");
+    } else {
+      showSearchToast("لا يوجد اسم يطابق «"+term+"»");
     }
   };
+  if (searchInput){
+    searchInput.oninput = e => {
+      state.search = e.target.value;
+      if (!state.search.trim() && state.searchApplied){
+        state.searchApplied = "";
+        applySearchHighlights();
+      }
+    };
+    searchInput.onkeydown = e => {
+      if (e.key === "Enter"){ e.preventDefault(); runSearch(); }
+    };
+  }
+  const searchGoBtn = document.getElementById("searchGoBtn");
+  if (searchGoBtn) searchGoBtn.onclick = runSearch;
   document.getElementById("logoutBtn").onclick = () => { if(pollTimer) clearInterval(pollTimer); forgetSession(); state.session=null; state.mode="login"; state.people={}; render(); };
   document.getElementById("syncNowBtn").onclick = () => loadPeople();
   const toggleHeaderBtn = document.getElementById("toggleHeaderBtn");
@@ -2023,6 +2157,7 @@ function wireAppEvents(layout){
   document.querySelectorAll(".legend button").forEach(b => b.onclick = () => {
     const g = parseInt(b.dataset.gen);
     state.search = "";
+    state.searchApplied = "";
     state.highlightGen = g;
     renderApp();
     const genLayout = computeLayout(state.people);
@@ -2162,7 +2297,12 @@ function wireAppEvents(layout){
 
   const showMessagesBtn = document.getElementById("showMessagesBtn");
   if (showMessagesBtn) showMessagesBtn.onclick = () => {
-    state.showMessagesModal = true; state.messagesList = null; state.replyOpenId = null; state.err=""; render();
+    state.showMessagesModal = true; state.messagesList = null; state.replyOpenId = null; state.err="";
+    state.msgNewThreshold = state.lastSeenMsgAt || 0;
+    const seenNow = Date.now();
+    state.lastSeenMsgAt = seenNow; state.unreadMsgCount = 0;
+    fbSet(PATH_PREFIX+"adminState/lastSeenMessagesAt", seenNow).catch(()=>{});
+    render();
     (async () => {
       try { state.messagesList = await fetchAndDecryptMessages(); }
       catch(_) { state.messagesList = []; }
@@ -2251,33 +2391,83 @@ function wireAppEvents(layout){
   }
 
   const inviteCardBtn = document.getElementById("inviteCardBtn");
-  if (inviteCardBtn) inviteCardBtn.onclick = async () => {
-    try {
-      const treeTitle = TREE_ID ? "شجرة عائلة آل عبدالعظيم" : "شجرة عائلة أحمد آل عبدالعظيم";
-      const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
-      const canvas = await buildInviteCardCanvas(treeTitle, link);
-      const msg = buildInviteMessage(treeTitle, link);
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const file = new File([blob], "بطاقة_دعوة.png", {type:"image/png"});
-        let shared = false;
-        if (navigator.canShare && navigator.canShare({files:[file]})){
-          try { await navigator.share({files:[file], title:"دعوة للانضمام", text: msg}); shared = true; } catch(_) {}
-        }
-        if (!shared){
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = "بطاقة_دعوة.png";
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
-          try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
-        }
-        state.copiedInviteCard = true;
-        render();
-        setTimeout(() => { state.copiedInviteCard = false; render(); }, 4000);
-      }, "image/png");
-    } catch(e){ state.err = "تعذّر إنشاء بطاقة الدعوة."; render(); }
+  if (inviteCardBtn) inviteCardBtn.onclick = () => {
+    state.showInviteModal = true; state.inviteList = null; state.inviteName = ""; state.inviteDupAck = ""; state.copiedInviteCard = false; state.err = ""; render();
+    (async () => {
+      try { state.inviteList = await fetchInvites(); } catch(_) { state.inviteList = []; }
+      if (state.showInviteModal) render();
+    })();
   };
+  const inviteOverlay = document.getElementById("inviteOverlay");
+  if (inviteOverlay){
+    const closeInvite = () => { state.showInviteModal=false; state.inviteName=""; state.inviteDupAck=""; state.err=""; render(); };
+    inviteOverlay.onclick = closeInvite;
+    const closeInviteBtn = document.getElementById("closeInviteBtn");
+    if (closeInviteBtn) closeInviteBtn.onclick = closeInvite;
+    const inviteNameInput = document.getElementById("inviteNameInput");
+    if (inviteNameInput) inviteNameInput.oninput = e => {
+      state.inviteName = e.target.value;
+      state.inviteDupAck = "";
+      const warn = document.getElementById("inviteDupWarn");
+      if (warn) warn.innerHTML = inviteDupWarningHtml(findInviteDup(state.inviteName));
+      const sendBtn = document.getElementById("sendInviteBtn");
+      if (sendBtn) sendBtn.textContent = "📇 إنشاء البطاقة وإرسالها";
+    };
+    const sendInviteBtn = document.getElementById("sendInviteBtn");
+    if (sendInviteBtn) sendInviteBtn.onclick = async () => {
+      const name = (document.getElementById("inviteNameInput")||{}).value || "";
+      state.inviteName = name;
+      state.err = "";
+      if (!name.trim()){ state.err = "اكتب اسم الشخص أولاً."; render(); return; }
+      const dup = findInviteDup(name);
+      if (dup && state.inviteDupAck !== normalizeArabic(name)){
+        state.inviteDupAck = normalizeArabic(name);
+        render();
+        return;
+      }
+      try {
+        const treeTitle = TREE_ID ? "شجرة عائلة آل عبدالعظيم" : "شجرة عائلة أحمد آل عبدالعظيم";
+        const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "");
+        const canvas = await buildInviteCardCanvas(treeTitle, link);
+        const msg = buildInviteMessage(treeTitle, link);
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          const file = new File([blob], "بطاقة_دعوة.png", {type:"image/png"});
+          let shared = false;
+          if (navigator.canShare && navigator.canShare({files:[file]})){
+            try { await navigator.share({files:[file], title:"دعوة للانضمام", text: msg}); shared = true; } catch(_) {}
+          }
+          if (!shared){
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "بطاقة_دعوة.png";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
+          }
+          try {
+            const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name: name.trim(), invitedAt: Date.now()}));
+            await fbSet(PATH_PREFIX+"invites/"+uid(), cipher);
+            state.inviteList = await fetchInvites();
+          } catch(_) { state.err = "أُنشئت البطاقة لكن تعذّر حفظ الاسم في سجل الدعوات."; }
+          state.inviteName = ""; state.inviteDupAck = "";
+          state.copiedInviteCard = true;
+          if (state.showInviteModal) render();
+          setTimeout(() => { state.copiedInviteCard = false; if (state.showInviteModal) render(); }, 4000);
+        }, "image/png");
+      } catch(e){ state.err = "تعذّر إنشاء بطاقة الدعوة."; render(); }
+    };
+    (state.inviteList||[]).forEach(inv => {
+      const delBtn = document.getElementById("delInviteBtn_"+inv.id);
+      if (delBtn) delBtn.onclick = async () => {
+        try {
+          await fbDelete(PATH_PREFIX+"invites/"+inv.id);
+          state.inviteList = await fetchInvites();
+        } catch(_) { state.err = "تعذّر الحذف."; }
+        render();
+      };
+    });
+  }
   const showJoinRequestsBtn = document.getElementById("showJoinRequestsBtn");
   if (showJoinRequestsBtn) showJoinRequestsBtn.onclick = () => {
     state.showJoinRequestsModal = true; state.joinRequestsList = null; state.err=""; render();
