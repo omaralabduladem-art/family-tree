@@ -48,6 +48,12 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .role-badge{background:rgba(201,161,90,0.18);border:1px solid rgba(201,161,90,0.4);border-radius:999px;padding:2px 10px;font-size:11px;color:var(--gold-light);}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin-top:10px;}
 .search{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid rgba(201,161,90,0.3);border-radius:999px;padding:7px 14px;min-width:180px;}
+.announce-banner{flex-shrink:0;display:flex;align-items:flex-start;gap:10px;max-width:900px;width:calc(100% - 24px);margin:8px auto 0;background:var(--panel);border:1px solid var(--gold);border-radius:12px;padding:10px 14px;box-shadow:0 6px 18px rgba(0,0,0,0.3);z-index:11;box-sizing:border-box;}
+.announce-banner .announce-text{flex:1;font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--cream);}
+.announce-banner button{flex-shrink:0;background:var(--gold);color:var(--bg);border:none;border-radius:999px;padding:5px 14px;font-family:'Tajawal',sans-serif;font-weight:700;cursor:pointer;}
+.wa-row{display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:7px 10px;}
+.wa-send{background:#25D366;color:#0B2B26;border:none;border-radius:999px;padding:5px 12px;font-family:'Tajawal',sans-serif;font-weight:700;font-size:12.5px;cursor:pointer;flex-shrink:0;}
+.wa-send.done{background:var(--panel-2);color:var(--cream-dim);border:1px solid rgba(201,161,90,0.35);}
 .search-go{background:none;border:none;color:var(--gold-light);cursor:pointer;font-size:14px;padding:0 2px;flex-shrink:0;}
 .menu-summary{position:relative;}
 .menu-summary .badge-count{position:absolute;top:-5px;right:-5px;margin:0;}
@@ -335,6 +341,14 @@ const state = {
   inviteName: "",
   inviteDupAck: "",
   inviteLoggedMsg: "",
+  invitePhone: "",
+  announcement: null,
+  showAnnounceModal: false,
+  showWaModal: false,
+  waContacts: null,
+  waMessage: "",
+  waSent: {},
+  waCopied: false,
   highlightGen: null,
   zoom: 1,
   detailId: null,
@@ -901,6 +915,82 @@ async function fetchAndDecryptMessages(){
   list.sort((a,b) => (b.sentAt||0) - (a.sentAt||0));
   return list;
 }
+const ANN_DISMISS_KEY = "ft_ann_dismissed_"+(TREE_ID||"default");
+async function loadAnnouncement(){
+  try {
+    const cipher = await fbGet(PATH_PREFIX+"announcement");
+    if (!cipher){ state.announcement = null; return; }
+    state.announcement = JSON.parse(await decryptText(state.session.cryptoKey, cipher));
+  } catch(_) {}
+}
+function announcementDismissed(){
+  try { return state.announcement && localStorage.getItem(ANN_DISMISS_KEY) === String(state.announcement.id); } catch(_) { return false; }
+}
+function toWhatsAppNumber(phone){
+  let d = String(phone||"")
+    .replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0)-0x0660))
+    .replace(/[\u06F0-\u06F9]/g, c => String(c.charCodeAt(0)-0x06F0))
+    .replace(/[^\d]/g, "");
+  if (d.indexOf("00") === 0) d = d.slice(2);
+  if (d.indexOf("05") === 0 && d.length === 10) d = "966"+d.slice(1);
+  else if (d.indexOf("5") === 0 && d.length === 9) d = "966"+d;
+  return d.length >= 8 ? d : "";
+}
+async function loadWaContacts(){
+  const [raw, invites] = await Promise.all([fbGet(PATH_PREFIX+"joinRequests"), fetchInvites()]);
+  const list = [], seen = new Set();
+  const add = (name, phone, source) => {
+    const num = toWhatsAppNumber(phone);
+    if (!num || seen.has(num)) return;
+    seen.add(num);
+    list.push({name: name||"", phone: phone, num, source});
+  };
+  if (raw) Object.values(raw).forEach(r => { if (r && r.status !== "rejected") add(r.name, r.phone, r.status === "approved" ? "عضو" : "طلب انضمام"); });
+  (invites||[]).forEach(inv => { if (inv.phone) add(inv.name, inv.phone, "مدعو"); });
+  list.sort((a,b) => (a.name||"").localeCompare(b.name||"", "ar"));
+  return list;
+}
+function renderAnnounceModal(){
+  const cur = state.announcement && state.announcement.text ? state.announcement.text : "";
+  return '<div class="overlay" id="announceOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeAnnounceBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📢 إعلان للجميع</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">يظهر كشريط فوق الشجرة لكل من يفتح الموقع، ويختفي عند من يضغط «تم». نشر إعلان جديد يظهر للجميع من جديد.</p>'
+    + '<div class="ft-field"><label>نص الإعلان</label><textarea id="announceInput" dir="rtl" style="min-height:100px;">'+esc(cur)+'</textarea></div>'
+    + errBlock()
+    + '<button class="ft-btn" id="publishAnnounceBtn" style="width:100%;justify-content:center;margin-bottom:8px;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ النشر...':'📢 نشر للجميع')+'</button>'
+    + (cur ? '<button class="ft-btn danger" id="clearAnnounceBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>🗑 إزالة الإعلان الحالي</button>' : '')
+    + '</div></div>';
+}
+function renderWaModal(){
+  let html = '<div class="overlay" id="waOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeWaBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">📱 رسالة جماعية واتساب</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اكتب الرسالة مرة وحدة، ثم اضغط «إرسال» جنب كل اسم: ينفتح واتساب والرسالة جاهزة، وما عليك إلا تضغط إرسال هناك.</p>'
+    + '<div class="ft-field"><label>الرسالة</label><textarea id="waMessageInput" dir="rtl" style="min-height:90px;">'+esc(state.waMessage)+'</textarea></div>'
+    + errBlock();
+  if (state.waContacts === null){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">جارٍ تجميع الأرقام...</div>';
+  } else if (state.waContacts.length === 0){
+    html += '<div style="text-align:center;color:var(--cream-dim);font-size:13px;">لا توجد أرقام بعد. الأرقام تأتي من طلبات الانضمام، ومن سجل الدعوات إذا كتبت رقم الجوال.</div>';
+  } else {
+    const sentCount = state.waContacts.filter(c => state.waSent[c.num]).length;
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      + '<div style="flex:1;font-weight:700;color:var(--gold-light);font-size:14px;">الأرقام ('+state.waContacts.length+')'+(sentCount?' <span style="font-weight:400;color:var(--cream-dim);font-size:12px;">— أُرسل لـ '+sentCount+'</span>':'')+'</div>'
+      + '<button class="ft-btn secondary" id="waCopyAllBtn" style="padding:5px 12px;font-size:12px;">'+(state.waCopied?'✅ تم النسخ':'📋 نسخ كل الأرقام')+'</button>'
+      + '</div><div style="display:flex;flex-direction:column;gap:6px;">';
+    state.waContacts.forEach((c,i) => {
+      const done = !!state.waSent[c.num];
+      html += '<div class="wa-row"><div style="flex:1;min-width:0;">'
+        + '<div style="font-size:13.5px;">'+esc(c.name||'بدون اسم')+' <span style="font-size:11px;color:var(--cream-dim);">· '+esc(c.source)+'</span></div>'
+        + '<div style="font-size:11.5px;color:var(--cream-dim);" dir="ltr">+'+esc(c.num)+'</div></div>'
+        + '<button class="wa-send'+(done?' done':'')+'" id="waSendBtn_'+i+'">'+(done?'✅ أُرسلت':'💬 إرسال')+'</button></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
 async function loadUnreadMessagesCount(){
   try {
     const lastSeen = await fbGet(PATH_PREFIX+"adminState/lastSeenMessagesAt");
@@ -955,6 +1045,7 @@ async function loadPeople(){
     }
     if (state.familyName) updateAppTitle(state.familyName);
     await loadQuotes();
+    await loadAnnouncement();
     if (state.session.role === "admin"){ await loadJoinRequestsCount(); await loadUnreadMessagesCount(); }
     render();
   } catch(e){
@@ -1313,7 +1404,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !state.showInviteModal && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !state.showInviteModal && !state.showAnnounceModal && !state.showWaModal && !gestureActive) loadPeople();
   }, 7000);
   startPresenceHeartbeat();
 }
@@ -1377,6 +1468,8 @@ function renderApp(){
     + (isAdmin ? '<button id="manageQuotesBtn">💬 إدارة العبارات</button>' : '')
     + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="inviteCardBtn">📇 بطاقة دعوة للانضمام</button>' : '')
+    + (isAdmin ? '<button id="announceBtn">📢 إعلان للجميع</button>' : '')
+    + (isAdmin ? '<button id="waListBtn">📱 رسالة جماعية واتساب</button>' : '')
     + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة'+(state.unreadMsgCount>0?' <span class="badge-count">'+state.unreadMsgCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
     + (state.session.emailIdentity ? '<button id="showMyMessagesBtn">📥 رسائلي</button>' : '')
@@ -1401,6 +1494,9 @@ function renderApp(){
   html += '</div>';
   if (state.currentQuote) html += '<div class="quote-box">'+esc(state.currentQuote)+'</div>';
   html += '</header>';
+  if (state.announcement && state.announcement.text && !announcementDismissed()){
+    html += '<div class="announce-banner"><div class="announce-text">📢 '+esc(state.announcement.text)+'</div><button type="button" id="dismissAnnounceBtn">تم</button></div>';
+  }
 
   html += '<div id="canvasWrap" dir="ltr">';
   if (peopleCount === 0){
@@ -1458,6 +1554,8 @@ function renderApp(){
   if (isAdmin && state.showEmailUsersModal) html += renderEmailUsersModal();
   if (isAdmin && state.showJoinRequestsModal) html += renderJoinRequestsModal();
   if (isAdmin && state.showInviteModal) html += renderInviteModal();
+  if (isAdmin && state.showAnnounceModal) html += renderAnnounceModal();
+  if (isAdmin && state.showWaModal) html += renderWaModal();
   if (state.showCheckMessagesModal) html += renderCheckMessagesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
   if (isAdmin && state.confirmImport) html += renderConfirmImport();
@@ -1901,6 +1999,7 @@ function renderInviteModal(){
     + '<div class="detail-name" style="margin-bottom:6px;">📇 بطاقة دعوة للانضمام</div>'
     + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">اكتب اسم من ستدعوه، ليُحفظ في السجل وتعرف لاحقاً أنك دعوته.</p>'
     + '<div class="ft-field"><label>اسم الشخص</label><input id="inviteNameInput" dir="rtl" value="'+esc(state.inviteName)+'" placeholder="مثال: خالد بن محمد" autocomplete="off"></div>'
+    + '<div class="ft-field"><label>رقم الجوال (اختياري — ليظهر في قائمة الواتساب)</label><input id="invitePhoneInput" dir="ltr" inputmode="tel" value="'+esc(state.invitePhone)+'" placeholder="05xxxxxxxx" autocomplete="off"></div>'
     + '<div id="inviteDupWarn">'+inviteDupWarningHtml(dup)+'</div>'
     + errBlock()
     + (state.copiedInviteCard ? '<div style="color:var(--gold-light);font-size:13px;text-align:center;margin-bottom:10px;">✅ أُنشئت البطاقة وحُفظ الاسم في السجل</div>' : '')
@@ -1917,7 +2016,7 @@ function renderInviteModal(){
     html += '<div style="display:flex;flex-direction:column;gap:6px;">';
     state.inviteList.forEach(inv => {
       html += '<div style="display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid rgba(201,161,90,0.25);border-radius:10px;padding:7px 10px;">'
-        + '<div style="flex:1;"><div style="font-size:13.5px;">'+esc(inv.name)+'</div><div style="font-size:11px;color:var(--cream-dim);">'+esc(inviteDateStr(inv.invitedAt))+(inv.loggedOnly?' · سُجّل يدوياً':'')+'</div></div>'
+        + '<div style="flex:1;"><div style="font-size:13.5px;">'+esc(inv.name)+'</div><div style="font-size:11px;color:var(--cream-dim);">'+esc(inviteDateStr(inv.invitedAt))+(inv.loggedOnly?' · سُجّل يدوياً':'')+'</div>'+(inv.phone?'<div style="font-size:11px;color:var(--cream-dim);" dir="ltr">'+esc(inv.phone)+'</div>':'')+'</div>'
         + '<button class="ft-btn danger" style="padding:4px 10px;font-size:12px;" id="delInviteBtn_'+inv.id+'">حذف</button>'
         + '</div>';
     });
@@ -2414,7 +2513,7 @@ function wireAppEvents(layout){
 
   const inviteCardBtn = document.getElementById("inviteCardBtn");
   if (inviteCardBtn) inviteCardBtn.onclick = () => {
-    state.showInviteModal = true; state.inviteList = null; state.inviteName = ""; state.inviteDupAck = ""; state.inviteLoggedMsg = ""; state.copiedInviteCard = false; state.err = ""; render();
+    state.showInviteModal = true; state.inviteList = null; state.inviteName = ""; state.inviteDupAck = ""; state.inviteLoggedMsg = ""; state.invitePhone = ""; state.copiedInviteCard = false; state.err = ""; render();
     (async () => {
       try { state.inviteList = await fetchInvites(); } catch(_) { state.inviteList = []; }
       if (state.showInviteModal) render();
@@ -2436,10 +2535,13 @@ function wireAppEvents(layout){
       const sendBtn = document.getElementById("sendInviteBtn");
       if (sendBtn) sendBtn.textContent = "📇 إنشاء البطاقة وإرسالها";
     };
+    const invitePhoneInput = document.getElementById("invitePhoneInput");
+    if (invitePhoneInput) invitePhoneInput.oninput = e => { state.invitePhone = e.target.value; };
     const sendInviteBtn = document.getElementById("sendInviteBtn");
     if (sendInviteBtn) sendInviteBtn.onclick = async () => {
       const name = (document.getElementById("inviteNameInput")||{}).value || "";
-      state.inviteName = name;
+      const sendPhone = ((document.getElementById("invitePhoneInput")||{}).value || "").trim();
+      state.inviteName = name; state.invitePhone = sendPhone;
       state.err = "";
       if (!name.trim()){ state.err = "اكتب اسم الشخص أولاً."; render(); return; }
       const dup = findInviteDup(name);
@@ -2469,11 +2571,11 @@ function wireAppEvents(layout){
             try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(msg); } catch(_) {}
           }
           try {
-            const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name: name.trim(), invitedAt: Date.now()}));
+            const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name: name.trim(), phone: sendPhone, invitedAt: Date.now()}));
             await fbSet(PATH_PREFIX+"invites/"+uid(), cipher);
             state.inviteList = await fetchInvites();
           } catch(_) { state.err = "أُنشئت البطاقة لكن تعذّر حفظ الاسم في سجل الدعوات."; }
-          state.inviteName = ""; state.inviteDupAck = "";
+          state.inviteName = ""; state.invitePhone = ""; state.inviteDupAck = "";
           state.copiedInviteCard = true;
           if (state.showInviteModal) render();
           setTimeout(() => { state.copiedInviteCard = false; if (state.showInviteModal) render(); }, 4000);
@@ -2483,16 +2585,17 @@ function wireAppEvents(layout){
     const logOnlyInviteBtn = document.getElementById("logOnlyInviteBtn");
     if (logOnlyInviteBtn) logOnlyInviteBtn.onclick = async () => {
       const name = ((document.getElementById("inviteNameInput")||{}).value || "").trim();
-      state.inviteName = name; state.err = ""; state.inviteLoggedMsg = "";
+      const logPhone = ((document.getElementById("invitePhoneInput")||{}).value || "").trim();
+      state.inviteName = name; state.invitePhone = logPhone; state.err = ""; state.inviteLoggedMsg = "";
       if (!name){ state.err = "اكتب اسم الشخص أولاً."; render(); return; }
       const dup = findInviteDup(name);
       if (dup){ state.err = "«"+dup.name+"» مسجّل مسبقاً في السجل."; render(); return; }
       logOnlyInviteBtn.disabled = true;
       try {
-        const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name, invitedAt: Date.now(), loggedOnly: true}));
+        const cipher = await encryptText(state.session.cryptoKey, JSON.stringify({name, phone: logPhone, invitedAt: Date.now(), loggedOnly: true}));
         await fbSet(PATH_PREFIX+"invites/"+uid(), cipher);
         state.inviteList = await fetchInvites();
-        state.inviteName = ""; state.inviteDupAck = "";
+        state.inviteName = ""; state.invitePhone = ""; state.inviteDupAck = "";
         state.inviteLoggedMsg = "✅ تم تسجيل «"+name+"»";
       } catch(_) { state.err = "تعذّر التسجيل."; }
       render();
@@ -2506,6 +2609,76 @@ function wireAppEvents(layout){
           await fbDelete(PATH_PREFIX+"invites/"+inv.id);
           state.inviteList = await fetchInvites();
         } catch(_) { state.err = "تعذّر الحذف."; }
+        render();
+      };
+    });
+  }
+  const dismissAnnounceBtn = document.getElementById("dismissAnnounceBtn");
+  if (dismissAnnounceBtn) dismissAnnounceBtn.onclick = () => {
+    try { localStorage.setItem(ANN_DISMISS_KEY, String(state.announcement && state.announcement.id)); } catch(_) {}
+    renderApp();
+  };
+  const announceBtn = document.getElementById("announceBtn");
+  if (announceBtn) announceBtn.onclick = () => { state.showAnnounceModal = true; state.err = ""; state.menuOpen = false; render(); };
+  const announceOverlay = document.getElementById("announceOverlay");
+  if (announceOverlay){
+    const closeAnn = () => { state.showAnnounceModal = false; state.err = ""; render(); };
+    announceOverlay.onclick = closeAnn;
+    document.getElementById("closeAnnounceBtn").onclick = closeAnn;
+    const publishAnnounceBtn = document.getElementById("publishAnnounceBtn");
+    if (publishAnnounceBtn) publishAnnounceBtn.onclick = async () => {
+      const text = ((document.getElementById("announceInput")||{}).value || "").trim();
+      if (!text){ state.err = "اكتب نص الإعلان أولاً."; render(); return; }
+      state.err = ""; state.busy = true; render();
+      try {
+        const obj = {text, id: Date.now()};
+        await fbSet(PATH_PREFIX+"announcement", await encryptText(state.session.cryptoKey, JSON.stringify(obj)));
+        state.announcement = obj;
+        state.showAnnounceModal = false;
+      } catch(_) { state.err = "تعذّر نشر الإعلان."; }
+      state.busy = false; render();
+    };
+    const clearAnnounceBtn = document.getElementById("clearAnnounceBtn");
+    if (clearAnnounceBtn) clearAnnounceBtn.onclick = async () => {
+      state.err = ""; state.busy = true; render();
+      try {
+        await fbDelete(PATH_PREFIX+"announcement");
+        state.announcement = null;
+        state.showAnnounceModal = false;
+      } catch(_) { state.err = "تعذّر إزالة الإعلان."; }
+      state.busy = false; render();
+    };
+  }
+  const waListBtn = document.getElementById("waListBtn");
+  if (waListBtn) waListBtn.onclick = () => {
+    state.showWaModal = true; state.waContacts = null; state.waCopied = false; state.err = ""; state.menuOpen = false; render();
+    (async () => {
+      try { state.waContacts = await loadWaContacts(); } catch(_) { state.waContacts = []; }
+      if (state.showWaModal) render();
+    })();
+  };
+  const waOverlay = document.getElementById("waOverlay");
+  if (waOverlay){
+    const closeWa = () => { state.showWaModal = false; state.err = ""; render(); };
+    waOverlay.onclick = closeWa;
+    document.getElementById("closeWaBtn").onclick = closeWa;
+    const waMessageInput = document.getElementById("waMessageInput");
+    if (waMessageInput) waMessageInput.oninput = e => { state.waMessage = e.target.value; };
+    const waCopyAllBtn = document.getElementById("waCopyAllBtn");
+    if (waCopyAllBtn) waCopyAllBtn.onclick = async () => {
+      const text = (state.waContacts||[]).map(c => "+"+c.num).join("\n");
+      try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text); state.waCopied = true; } catch(_) {}
+      render();
+      setTimeout(() => { state.waCopied = false; if (state.showWaModal) render(); }, 2500);
+    };
+    (state.waContacts||[]).forEach((c,i) => {
+      const b = document.getElementById("waSendBtn_"+i);
+      if (b) b.onclick = () => {
+        const msg = ((document.getElementById("waMessageInput")||{}).value || "").trim();
+        if (!msg){ state.err = "اكتب الرسالة أولاً."; render(); return; }
+        state.waMessage = msg; state.err = "";
+        window.open("https://wa.me/"+c.num+"?text="+encodeURIComponent(msg), "_blank");
+        state.waSent[c.num] = true;
         render();
       };
     });
