@@ -354,6 +354,9 @@ const state = {
   waMessage: "",
   waSent: {},
   waCopied: false,
+  bigTreeKeyB64: null,
+  showLinkTreeModal: false,
+  detailPhotoIdx: 0,
   highlightGen: null,
   zoom: 1,
   detailId: null,
@@ -968,6 +971,22 @@ async function loadWaContacts(){
   list.sort((a,b) => (a.name||"").localeCompare(b.name||"", "ar"));
   return list;
 }
+function renderLinkTreeModal(){
+  const linked = !!state.bigTreeKeyB64;
+  return '<div class="overlay" id="linkTreeOverlay"><div class="modal" onclick="event.stopPropagation()">'
+    + '<button class="modal-close" id="closeLinkTreeBtn">✕</button>'
+    + '<div class="detail-name" style="margin-bottom:6px;">🔗 ربط الشجرة الكبيرة</div>'
+    + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">'
+    + (linked ? 'الربط مفعّل ✅ — كل من يدخل هذه الشجرة ينتقل للشجرة الكبيرة بضغطة واحدة كمشاهد، بدون كلمة مرور.'
+              : 'أدخل كلمة مرور <b>المشاهدة</b> للشجرة الكبيرة مرة وحدة. بعدها يدخلها الجميع من زر «الشجرة الكبيرة» مباشرة بصلاحية مشاهدة فقط.')
+    + '</p>'
+    + (linked ? '' : field("linkTreePw","كلمة مرور المشاهدة للشجرة الكبيرة","password"))
+    + errBlock()
+    + (linked
+      ? '<button class="ft-btn danger" id="unlinkTreeBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>🔓 إلغاء الربط</button>'
+      : '<button class="ft-btn" id="saveLinkTreeBtn" style="width:100%;justify-content:center;" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ التحقق...':'تفعيل الربط')+'</button>')
+    + '</div></div>';
+}
 function renderAnnounceModal(){
   const cur = state.announcement && state.announcement.text ? state.announcement.text : "";
   return '<div class="overlay" id="announceOverlay"><div class="modal" onclick="event.stopPropagation()">'
@@ -1062,6 +1081,10 @@ async function loadPeople(){
       state.familyName = meta.familyName || "";
     }
     if (state.familyName) updateAppTitle(state.familyName);
+    if (meta.linkedBigTreeKeyEnc){
+      try { state.bigTreeKeyB64 = await decryptText(state.session.cryptoKey, meta.linkedBigTreeKeyEnc); }
+      catch(_) { state.bigTreeKeyB64 = null; }
+    } else { state.bigTreeKeyB64 = null; }
     await loadQuotes();
     await loadAnnouncement();
     if (state.session.role === "admin"){ await loadJoinRequestsCount(); await loadUnreadMessagesCount(); }
@@ -1422,7 +1445,7 @@ function val(id){ const el = document.getElementById(id); return el ? el.value.t
 function startPolling(){
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !state.showInviteModal && !state.showAnnounceModal && !state.showWaModal && !gestureActive) loadPeople();
+    if (state.mode==="app" && state.session && !state.busy && !state.editId && !state.showChangePw && !state.showFamilyName && !state.showQuotesModal && !state.showStats && !state.showContactModal && !state.showMessagesModal && !state.showMyMessagesModal && !state.showEmailUsersModal && !state.showCheckMessagesModal && !state.showJoinRequestsModal && !state.showBranchExportModal && !state.showBranchImportModal && !state.showInviteModal && !state.showAnnounceModal && !state.showWaModal && !state.showLinkTreeModal && !gestureActive) loadPeople();
   }, 7000);
   startPresenceHeartbeat();
 }
@@ -1487,6 +1510,7 @@ function renderApp(){
     + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="inviteCardBtn">📇 بطاقة دعوة للانضمام</button>' : '')
     + (isAdmin ? '<button id="announceBtn">📢 إعلان للجميع</button>' : '')
+    + (isAdmin && !TREE_ID ? '<button id="linkTreeBtn">🔗 ربط الشجرة الكبيرة'+(state.bigTreeKeyB64?' ✅':'')+'</button>' : '')
     + (isAdmin ? '<button id="waListBtn">📱 رسالة جماعية واتساب</button>' : '')
     + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة'+(state.unreadMsgCount>0?' <span class="badge-count">'+state.unreadMsgCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="showEmailUsersBtn">📧 إدارة الدخول بالبريد</button>' : '')
@@ -1574,6 +1598,7 @@ function renderApp(){
   if (isAdmin && state.showJoinRequestsModal) html += renderJoinRequestsModal();
   if (isAdmin && state.showInviteModal) html += renderInviteModal();
   if (isAdmin && state.showAnnounceModal) html += renderAnnounceModal();
+  if (isAdmin && state.showLinkTreeModal) html += renderLinkTreeModal();
   if (isAdmin && state.showWaModal) html += renderWaModal();
   if (state.showCheckMessagesModal) html += renderCheckMessagesModal();
   if (isAdmin && state.showRecoveryModal) html += renderRecoveryModal();
@@ -1632,13 +1657,14 @@ function renderDetailModal(p, isEditor){
   }
   const photos = Array.isArray(p.photos) ? p.photos : (p.photo ? [p.photo] : []);
   const photoPos = p.photoPos || "center";
+  const mainIdx = Math.min(Math.max(state.detailPhotoIdx||0, 0), Math.max(photos.length-1, 0));
   let html = '<div class="overlay" id="detailOverlay"><div class="modal" onclick="event.stopPropagation()">'
   + '<button class="modal-close" id="closeDetailBtn">✕</button>'
-    + '<div class="detail-avatar"'+(photos[0]?' title="اضغط لعرض الصورة كاملة"':'')+'>'+(photos[0]?'<img src="'+photos[0]+'" style="object-position:'+photoPos+' center;">':'👤')+'</div>';
+    + '<div class="detail-avatar"'+(photos[0]?' title="اضغط لعرض الصورة كاملة"':'')+'>'+(photos[mainIdx]?'<img src="'+photos[mainIdx]+'" style="object-position:'+photoPos+' center;">':'👤')+'</div>';
   if (photos.length > 1){
     html += '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;">';
     photos.forEach((ph,i)=>{
-      html += '<img src="'+ph+'" class="gallery-thumb" data-idx="'+i+'" style="object-position:'+photoPos+' center;width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid rgba(201,161,90,0.4);">';
+      html += '<img src="'+ph+'" class="gallery-thumb" data-idx="'+i+'" style="object-position:'+photoPos+' center;width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid '+(i===mainIdx?'var(--gold-light)':'rgba(201,161,90,0.4)')+';">';
     });
     html += '</div>';
   }
@@ -2417,7 +2443,14 @@ function wireAppEvents(layout){
   }
 
   const goMainTreeBtn = document.getElementById("goMainTreeBtn");
-  if (goMainTreeBtn) goMainTreeBtn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + "?tree=" + encodeURIComponent(BIG_TREE_ID); };
+  if (goMainTreeBtn) goMainTreeBtn.onclick = () => {
+    if (state.bigTreeKeyB64){
+      try { localStorage.setItem("ft_remember_"+BIG_TREE_ID, JSON.stringify({role:"viewer", rawKeyB64: state.bigTreeKeyB64, emailIdentity: null})); } catch(_) {}
+    }
+    const bigUrl = window.location.origin + window.location.pathname + "?tree=" + encodeURIComponent(BIG_TREE_ID);
+    const win = window.open(bigUrl, "_blank");
+    if (!win) window.location.href = bigUrl;
+  };
   const showContactBtn = document.getElementById("showContactBtn");
   if (showContactBtn) showContactBtn.onclick = () => { state.showContactModal = true; state.contactSent = false; state.err=""; render(); };
   const contactOverlay = document.getElementById("contactOverlay");
@@ -2646,6 +2679,45 @@ function wireAppEvents(layout){
     try { localStorage.setItem(ANN_DISMISS_KEY, String(state.announcement && state.announcement.id)); } catch(_) {}
     renderApp();
   };
+  const linkTreeBtn = document.getElementById("linkTreeBtn");
+  if (linkTreeBtn) linkTreeBtn.onclick = () => { state.showLinkTreeModal = true; state.err = ""; state.menuOpen = false; render(); };
+  const linkTreeOverlay = document.getElementById("linkTreeOverlay");
+  if (linkTreeOverlay){
+    const closeLink = () => { state.showLinkTreeModal = false; state.err = ""; render(); };
+    linkTreeOverlay.onclick = closeLink;
+    document.getElementById("closeLinkTreeBtn").onclick = closeLink;
+    const saveLinkTreeBtn = document.getElementById("saveLinkTreeBtn");
+    if (saveLinkTreeBtn) saveLinkTreeBtn.onclick = async () => {
+      const pw = val("linkTreePw");
+      if (!pw){ state.err = "أدخل كلمة المرور."; render(); return; }
+      state.err = ""; state.busy = true; render();
+      try {
+        const bigPrefix = "trees/"+encodeURIComponent(BIG_TREE_ID)+"/";
+        const rec = await fbGet(bigPrefix+"auth");
+        if (!rec) throw new Error("no auth");
+        const k = await deriveKey(pw, rec.viewSalt);
+        const rawKeyB64 = await decryptText(k, rec.viewWrap);
+        const meta = await loadMeta();
+        const linkedBigTreeKeyEnc = await encryptText(state.session.cryptoKey, rawKeyB64);
+        await saveMeta({...meta, linkedBigTreeKeyEnc});
+        state.bigTreeKeyB64 = rawKeyB64;
+        state.showLinkTreeModal = false;
+      } catch(e){ state.err = "كلمة المرور غير صحيحة، أو تعذّر الوصول للشجرة الكبيرة."; }
+      state.busy = false; render();
+    };
+    const unlinkTreeBtn = document.getElementById("unlinkTreeBtn");
+    if (unlinkTreeBtn) unlinkTreeBtn.onclick = async () => {
+      state.err = ""; state.busy = true; render();
+      try {
+        const meta = await loadMeta();
+        const clean = {...meta}; delete clean.linkedBigTreeKeyEnc;
+        await saveMeta(clean);
+        state.bigTreeKeyB64 = null;
+        state.showLinkTreeModal = false;
+      } catch(e){ state.err = "تعذّر إلغاء الربط."; }
+      state.busy = false; render();
+    };
+  }
   const announceBtn = document.getElementById("announceBtn");
   if (announceBtn) announceBtn.onclick = () => { state.showAnnounceModal = true; state.err = ""; state.menuOpen = false; render(); };
   const announceOverlay = document.getElementById("announceOverlay");
@@ -3142,7 +3214,7 @@ function wireAppEvents(layout){
       renderApp();
       return;
     }
-    state.detailId = n.dataset.id; render();
+    state.detailId = n.dataset.id; state.detailPhotoIdx = 0; render();
   });
 
   const detailOverlay = document.getElementById("detailOverlay");
@@ -3192,8 +3264,8 @@ function wireAppEvents(layout){
     };
     document.querySelectorAll(".gallery-thumb").forEach(t => t.onclick = (e) => {
       e.stopPropagation();
-      const avatar = document.querySelector(".detail-avatar");
-      if (avatar) avatar.innerHTML = '<img src="'+t.src+'" style="'+(t.getAttribute("style")||"").split(";").filter(x=>x.indexOf("object-position")===0).join(";")+'">';
+      state.detailPhotoIdx = parseInt(t.dataset.idx, 10) || 0;
+      render();
     });
   }
 
