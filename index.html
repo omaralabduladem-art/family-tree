@@ -88,6 +88,8 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .photo-lightbox .hint{color:var(--cream-dim);font-size:12.5px;}
 .detail-name{font-family:'Amiri',serif;font-size:22px;text-align:center;color:var(--gold-light);font-weight:700;}
 .detail-meta{text-align:center;color:var(--cream-dim);font-size:13px;margin-top:4px;}
+.death-year{color:var(--cream);font-weight:700;font-size:15.5px;}
+.node .years .death-year{font-size:11.5px;font-weight:700;color:var(--cream);}
 .detail-bio{margin-top:14px;font-size:14px;line-height:1.7;color:var(--cream);white-space:pre-wrap;}
 .detail-rel{margin-top:14px;font-size:13px;color:var(--cream-dim);}
 .nasab{font-family:'Amiri',serif;font-size:14.5px;color:var(--gold-light);line-height:1.8;margin-bottom:10px;}
@@ -805,7 +807,7 @@ function buildWelcomeMessage(r){
   const link = window.location.origin + window.location.pathname + (TREE_ID ? "?tree="+encodeURIComponent(TREE_ID) : "") + (TREE_ID ? "&" : "?") + "le="+encodeURIComponent(r.email)+"&lc="+encodeURIComponent(r.tempCode);
   return "مرحباً بك "+r.name+" 🌳\n\n"
     + "يسعدنا انضمامك لشجرة العائلة، وتم قبول طلبك بنجاح.\n\n"
-    + "للدخول أول مرة، بمجرد الضغط على الرابط التالي ستدخل مباشرة:\n"
+    + "للدخول أول مرة اضغط الرابط التالي وستدخل مباشرة:\n"
     + link+"\n\n"
     + "بعدها سيُطلب منك اختيار كلمة مرور خاصة بك — احفظها جيداً.\n\n"
     + "من المرات القادمة، فقط أدخل بريدك ("+r.email+") وكلمة مرورك التي اخترتها من صفحة الدخول العادية.\n\n"
@@ -1573,7 +1575,7 @@ function renderApp(){
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
-      const birthTxt = esc(p.birthYear||''); const yearsText = birthTxt+(p.deathYear?(birthTxt?' – ':'')+esc(p.deathYear):(p.deceased?(birthTxt?' – ':'')+'متوفى':''));
+      const birthTxt = esc(p.birthYear||''); const yearsText = birthTxt+(p.deathYear?(birthTxt?' – ':'')+'<span class="death-year">'+esc(p.deathYear)+' للهجرة</span>':(p.deceased?(birthTxt?' – ':'')+'متوفى':''));
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" data-name="'+esc(p.name)+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
         + '<div class="name">'+esc(p.name)+'</div>'+(yearsText?'<div class="years">'+'\u2067'+yearsText+'\u2069'+'</div>':'')+'</div>';
     });
@@ -1612,6 +1614,10 @@ function renderApp(){
   const prevScroll = prevWrap ? {left: prevWrap.scrollLeft, top: prevWrap.scrollTop} : null;
   const prevModal = document.querySelector(".overlay .modal");
   const prevModalScroll = prevModal ? prevModal.scrollTop : null;
+  const prevToolbar = document.querySelector(".toolbar");
+  const prevToolbarScroll = prevToolbar ? prevToolbar.scrollLeft : null;
+  const prevLegend = document.querySelector(".legend");
+  const prevLegendScroll = prevLegend ? prevLegend.scrollLeft : null;
   const activeEl = document.activeElement;
   let prevFocus = null;
   if (activeEl && activeEl.id && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") && app.contains(activeEl)){
@@ -1635,6 +1641,14 @@ function renderApp(){
   if (prevModalScroll !== null){
     const newModal = document.querySelector(".overlay .modal");
     if (newModal) newModal.scrollTop = prevModalScroll;
+  }
+  if (prevToolbarScroll !== null){
+    const newToolbar = document.querySelector(".toolbar");
+    if (newToolbar) newToolbar.scrollLeft = prevToolbarScroll;
+  }
+  if (prevLegendScroll !== null){
+    const newLegend = document.querySelector(".legend");
+    if (newLegend) newLegend.scrollLeft = prevLegendScroll;
   }
 }
 
@@ -1669,7 +1683,7 @@ function renderDetailModal(p, isEditor){
     html += '</div>';
   }
  html += '<div class="detail-name">'+esc(p.name)+'</div>'
-    + '<div class="detail-meta">'+'\u2067'+(esc(p.birthYear||'')+(p.deathYear?(p.birthYear?' – ':'')+esc(p.deathYear):(p.deceased?(p.birthYear?' – ':'')+'متوفى':'')))+'\u2069'+'</div>'
+    + '<div class="detail-meta">'+'\u2067'+(esc(p.birthYear||'')+(p.deathYear?(p.birthYear?' – ':'')+'<span class="death-year">'+esc(p.deathYear)+' للهجرة</span>':(p.deceased?(p.birthYear?' – ':'')+'متوفى':'')))+'\u2069'+'</div>'
     + '<div class="detail-meta" style="margin-top:2px;">'+esc(genLabel(genNum))+'</div>'
     + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
