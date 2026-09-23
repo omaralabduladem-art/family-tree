@@ -515,6 +515,11 @@ function showSearchToast(msg){
   document.body.appendChild(t);
   setTimeout(() => { if (t.parentNode) t.remove(); }, 2200);
 }
+function arDigits(v){
+  return String(v==null?"":v)
+    .replace(/[0-9]/g, d => String.fromCharCode(0x0660 + Number(d)))
+    .replace(/[\u06F0-\u06F9]/g, d => String.fromCharCode(0x0660 + (d.charCodeAt(0)-0x06F0)));
+}
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function normalizeArabic(s){
   return (s||"")
@@ -1578,7 +1583,7 @@ function renderApp(){
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
-      const birthTxt = esc(p.birthYear||''); const yearsText = birthTxt+(p.deathYear?(birthTxt?' – ':'')+'<span class="death-year">'+esc(p.deathYear)+' للهجرة</span>':(p.deceased?(birthTxt?' – ':'')+'متوفى':''));
+      const birthTxt = esc(arDigits(p.birthYear||'')); const yearsText = birthTxt+(p.deathYear?(birthTxt?' – ':'')+'<span class="death-year">'+esc(arDigits(p.deathYear))+' للهجرة</span>':(p.deceased?(birthTxt?' – ':'')+'متوفى':''));
       html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" data-name="'+esc(p.name)+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
         + '<div class="name">'+esc(p.name)+'</div>'+(yearsText?'<div class="years">'+'\u2067'+yearsText+'\u2069'+'</div>':'')+'</div>';
     });
@@ -1686,7 +1691,7 @@ function renderDetailModal(p, isEditor){
     html += '</div>';
   }
  html += '<div class="detail-name">'+esc(p.name)+'</div>'
-    + '<div class="detail-meta">'+'\u2067'+((p.birthYear?'<span class="birth-year">'+esc(p.birthYear)+'</span>':'')+(p.deathYear?(p.birthYear?' – ':'')+'<span class="death-year">'+esc(p.deathYear)+' للهجرة</span>':(p.deceased?(p.birthYear?' – ':'')+'متوفى':'')))+'\u2069'+'</div>'
+    + '<div class="detail-meta">'+'\u2067'+((p.birthYear?'<span class="birth-year">'+esc(arDigits(p.birthYear))+'</span>':'')+(p.deathYear?(p.birthYear?' – ':'')+'<span class="death-year">'+esc(arDigits(p.deathYear))+' للهجرة</span>':(p.deceased?(p.birthYear?' – ':'')+'متوفى':'')))+'\u2069'+'</div>'
     + '<div class="detail-meta detail-gen">'+esc(genLabel(genNum))+'</div>'
     + (nasabChain ? '<div class="nasab">'+nasabChain+'</div>' : '')
     + (p.bio ? '<div class="detail-bio">'+esc(p.bio)+'</div>' : '')
