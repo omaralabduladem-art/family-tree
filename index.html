@@ -219,6 +219,7 @@ const DB_URL = "https://family-tree-9007d-default-rtdb.asia-southeast1.firebased
 const TREE_ID = new URLSearchParams(window.location.search).get("tree") || "";
 const AUTO_LOGIN_EMAIL = new URLSearchParams(window.location.search).get("le") || "";
 const AUTO_LOGIN_CODE = new URLSearchParams(window.location.search).get("lc") || "";
+const AUTO_LINK_TOKEN = new URLSearchParams(window.location.search).get("lt") || "";
 const PATH_PREFIX = TREE_ID ? "trees/"+encodeURIComponent(TREE_ID)+"/" : "";
 const BIG_TREE_ID = "آل-عبدالعظيم"; // الشجرة الكبيرة — يفتحها الزر من الشجرة الصغيرة
 const REMEMBER_KEY = "ft_remember_"+(TREE_ID||"default");
@@ -979,7 +980,7 @@ function renderLinkTreeModal(){
     + '<button class="modal-close" id="closeLinkTreeBtn">✕</button>'
     + '<div class="detail-name" style="margin-bottom:6px;">🔗 ربط الشجرة الكبيرة</div>'
     + '<p style="color:var(--cream-dim);font-size:13px;text-align:center;margin-bottom:14px;">'
-    + (linked ? 'الربط مفعّل ✅ — كل من يدخل هذه الشجرة ينتقل للشجرة الكبيرة بضغطة واحدة كمشاهد، بدون كلمة مرور.'
+    + (linked ? 'الربط مفعّل ✅ — كل من يدخل هذه الشجرة ينتقل للشجرة الكبيرة بضغطة واحدة كمشاهد، بدون كلمة مرور. الرابط يُستهلك مرة واحدة وينتهي خلال 5 دقائق، فلا يفيد أحداً لو نُسخ.'
               : 'أدخل كلمة مرور <b>المشاهدة</b> للشجرة الكبيرة مرة وحدة. بعدها يدخلها الجميع من زر «الشجرة الكبيرة» مباشرة بصلاحية مشاهدة فقط.')
     + '</p>'
     + (linked ? '' : field("linkTreePw","كلمة مرور المشاهدة للشجرة الكبيرة","password"))
@@ -2457,13 +2458,21 @@ function wireAppEvents(layout){
   }
 
   const goMainTreeBtn = document.getElementById("goMainTreeBtn");
-  if (goMainTreeBtn) goMainTreeBtn.onclick = () => {
+  if (goMainTreeBtn) goMainTreeBtn.onclick = async () => {
+    const baseUrl = window.location.origin + window.location.pathname + "?tree=" + encodeURIComponent(BIG_TREE_ID);
+    const win = window.open("", "_blank");
+    let url = baseUrl;
     if (state.bigTreeKeyB64){
-      try { localStorage.setItem("ft_remember_"+BIG_TREE_ID, JSON.stringify({role:"viewer", rawKeyB64: state.bigTreeKeyB64, emailIdentity: null})); } catch(_) {}
+      try {
+        const tok = bufToB64(crypto.getRandomValues(new Uint8Array(18)).buffer).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+        const id = uid();
+        const wrapped = await wrapDataKeyFor(tok, state.bigTreeKeyB64);
+        await fbSet("linkTokens/"+id, {salt: wrapped.salt, wrap: wrapped.wrap, exp: Date.now() + 5*60*1000});
+        url = baseUrl + "&lt=" + encodeURIComponent(id + "." + tok);
+      } catch(_) {}
     }
-    const bigUrl = window.location.origin + window.location.pathname + "?tree=" + encodeURIComponent(BIG_TREE_ID);
-    const win = window.open(bigUrl, "_blank");
-    if (!win) window.location.href = bigUrl;
+    if (win) win.location.href = url;
+    else window.location.href = url;
   };
   const showContactBtn = document.getElementById("showContactBtn");
   if (showContactBtn) showContactBtn.onclick = () => { state.showContactModal = true; state.contactSent = false; state.err=""; render(); };
@@ -3507,6 +3516,31 @@ function wireAppEvents(layout){
         startPolling();
         return;
       } catch(_) { forgetSession(); }
+    }
+    if (AUTO_LINK_TOKEN && AUTO_LINK_TOKEN.indexOf(".") > 0){
+      try {
+        const dot = AUTO_LINK_TOKEN.indexOf(".");
+        const id = AUTO_LINK_TOKEN.slice(0, dot), tok = AUTO_LINK_TOKEN.slice(dot+1);
+        const rec = await fbGet("linkTokens/"+id);
+        if (!rec || !rec.exp || Date.now() > rec.exp) throw new Error("expired");
+        const k = await deriveKey(tok, rec.salt);
+        const rawKeyB64 = await decryptText(k, rec.wrap);
+        fbDelete("linkTokens/"+id).catch(()=>{});
+        const cryptoKey = await importDataKey(rawKeyB64);
+        state.session = {role:"viewer", cryptoKey, rawKeyB64, emailIdentity: null};
+        rememberSession("viewer", rawKeyB64);
+        state.mode = "app";
+        try {
+          const clean = new URLSearchParams(window.location.search);
+          clean.delete("lt");
+          history.replaceState(null, "", window.location.pathname + (clean.toString() ? "?"+clean.toString() : ""));
+        } catch(_) {}
+        render();
+        incrementCounter(PATH_PREFIX+"stats/totalLogins");
+        await loadPeople();
+        startPolling();
+        return;
+      } catch(_) { /* fall through to normal login screen */ }
     }
     if (AUTO_LOGIN_EMAIL && AUTO_LOGIN_CODE){
       try {
