@@ -218,6 +218,7 @@ const TREE_ID = new URLSearchParams(window.location.search).get("tree") || "";
 const AUTO_LOGIN_EMAIL = new URLSearchParams(window.location.search).get("le") || "";
 const AUTO_LOGIN_CODE = new URLSearchParams(window.location.search).get("lc") || "";
 const PATH_PREFIX = TREE_ID ? "trees/"+encodeURIComponent(TREE_ID)+"/" : "";
+const BIG_TREE_ID = "آل-عبدالعظيم"; // الشجرة الكبيرة — يفتحها الزر من الشجرة الصغيرة
 const REMEMBER_KEY = "ft_remember_"+(TREE_ID||"default");
 function rememberSession(role, rawKeyB64, emailIdentity){
   try { localStorage.setItem(REMEMBER_KEY, JSON.stringify({role, rawKeyB64, emailIdentity: emailIdentity||null})); } catch(_) {}
@@ -1504,7 +1505,7 @@ function renderApp(){
     + '<button class="ft-btn secondary" id="showStatsBtn">📊 إحصائيات</button>'
     + '<button class="ft-btn secondary" id="showKinshipBtn">🔗 القرابة بين شخصين</button>'
     + '<button class="ft-btn secondary" id="showContactBtn">📨 راسلنا</button>'
-    + (TREE_ID ? '<button class="ft-btn secondary" id="goMainTreeBtn">🌳 الشجرة الكبيرة</button>' : '')
+    + (!TREE_ID ? '<button class="ft-btn secondary" id="goMainTreeBtn">🌳 الشجرة الكبيرة</button>' : '')
     + '<div class="search"><input id="searchInput" dir="rtl" enterkeyhint="search" placeholder="اكتب الاسم ثم اضغط Enter" value="'+esc(state.search)+'"><button type="button" class="search-go" id="searchGoBtn" title="بحث">🔍</button></div>'
     + '</div>'
     + '<div class="legend">';
@@ -2416,7 +2417,7 @@ function wireAppEvents(layout){
   }
 
   const goMainTreeBtn = document.getElementById("goMainTreeBtn");
-  if (goMainTreeBtn) goMainTreeBtn.onclick = () => { window.location.href = window.location.origin + window.location.pathname; };
+  if (goMainTreeBtn) goMainTreeBtn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + "?tree=" + encodeURIComponent(BIG_TREE_ID); };
   const showContactBtn = document.getElementById("showContactBtn");
   if (showContactBtn) showContactBtn.onclick = () => { state.showContactModal = true; state.contactSent = false; state.err=""; render(); };
   const contactOverlay = document.getElementById("contactOverlay");
