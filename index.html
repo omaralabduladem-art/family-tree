@@ -70,9 +70,9 @@ h1{font-family:'Amiri',serif;font-size:34px;font-weight:700;color:var(--gold-lig
 .node.deceased{border-color:#A3A3A3;background:rgba(80,80,80,0.65);}
 .node.deceased .name{color:#E2E2E2;}
 .node.deceased .years{color:#B5B5B5;}
-.node.featured{transform:scale(1.4);z-index:6;border-color:#B98CFF!important;border-width:2.5px;background:linear-gradient(160deg, rgba(120,70,190,0.6), rgba(23,82,67,0.85))!important;box-shadow:0 0 20px 4px rgba(185,140,255,0.45);}
-.node.featured .name{font-size:19px;color:#F1E4FF;}
-.node.featured .years{color:#E4D6F7;}
+.node.featured{z-index:6;border-color:#FF9F45!important;border-width:2.5px;background:linear-gradient(160deg, rgba(255,140,50,0.5), rgba(23,82,67,0.85))!important;box-shadow:0 0 14px 2px rgba(255,159,69,0.38);}
+.node.featured .name{font-size:19px;color:#FFE7CC;}
+.node.featured .years{color:#FFD9AE;}
 .node.match{border-color:var(--gold-light);box-shadow:0 0 14px 2px var(--gold-light);}
 .node .name{font-family:'Amiri',serif;font-size:15.5px;font-weight:700;color:var(--cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .node .years{font-size:11px;color:var(--cream-dim);margin-top:2px;}
@@ -1583,12 +1583,13 @@ function renderApp(){
       const isDeceased = p.deceased || (p.deathYear && String(p.deathYear).trim());
       const isHighlighted = !!p.highlighted;
       const isFeatured = !!p.featured;
+      const featuredScale = isFeatured ? Math.min(2.4, Math.max(1.4, 0.35/Math.max(state.zoom, 0.05))) : 1;
       const isPicked = (state.kinshipPickA===p.id || state.kinshipPickB===p.id);
       const inHighlightSet = kinshipHighlightSet && kinshipHighlightSet.has(p.id);
       const kinshipDim = kinshipHighlightSet && !inHighlightSet;
       const kinshipHL = isPicked || inHighlightSet;
       const birthTxt = esc(arDigits(p.birthYear||'')); const yearsText = birthTxt+(p.deathYear?(birthTxt?' – ':'')+'<span class="death-year">'+esc(arDigits(p.deathYear))+' هـ</span>':(p.deceased?(birthTxt?' – ':'')+'متوفى':''));
-      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(isFeatured?' featured':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" data-name="'+esc(p.name)+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;">'
+      html += '<div class="node'+(p.gender==='f'?' female':'')+(isDeceased?' deceased':'')+(isHighlighted?' highlighted':'')+(isFeatured?' featured':'')+(match?' match':'')+(kinshipHL?' kinship-highlight':'')+(kinshipDim?' kinship-dim':'')+'" data-id="'+p.id+'" data-name="'+esc(p.name)+'" style="top:'+pxY(pos.row)+'px;right:'+pxX(pos.x)+'px;'+(isFeatured?'transform:scale('+(featuredScale*1.2).toFixed(2)+','+(1+(featuredScale-1)*0.3).toFixed(2)+');':'')+'">'
         + '<div class="name">'+esc(p.name)+'</div>'+(yearsText?'<div class="years">'+'\u2067'+yearsText+'\u2069'+'</div>':'')+'</div>';
     });
     html += '</div></div>';
