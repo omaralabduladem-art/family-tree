@@ -366,6 +366,7 @@ const state = {
   waSent: {},
   waCopied: false,
   bigTreeKeyB64: null,
+  photosUncropped: false,
   showLinkTreeModal: false,
   detailPhotoIdx: 0,
   highlightGen: null,
@@ -529,7 +530,9 @@ function arDigits(v){
 function photoPosAt(p, i){
   const arr = Array.isArray(p && p.photoPositions) ? p.photoPositions : null;
   const v = arr && arr[i];
-  return (v === "top" || v === "bottom" || v === "center" || v === "whole") ? v : ((p && p.photoPos) || "center");
+  if (v === "top" || v === "bottom" || v === "center" || v === "whole") return v;
+  if (state.photosUncropped) return "whole";
+  return (p && p.photoPos) || "center";
 }
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function normalizeArabic(s){
@@ -1102,6 +1105,7 @@ async function loadPeople(){
       state.familyName = meta.familyName || "";
     }
     if (state.familyName) updateAppTitle(state.familyName);
+    state.photosUncropped = !!meta.photosUncropped;
     if (meta.linkedBigTreeKeyEnc){
       try { state.bigTreeKeyB64 = await decryptText(state.session.cryptoKey, meta.linkedBigTreeKeyEnc); }
       catch(_) { state.bigTreeKeyB64 = null; }
@@ -1531,6 +1535,7 @@ function renderApp(){
     + (isAdmin ? '<button id="showJoinRequestsBtn">📝 طلبات التسجيل'+(state.pendingJoinCount>0?' <span class="badge-count">'+state.pendingJoinCount+'</span>':'')+'</button>' : '')
     + (isAdmin ? '<button id="inviteCardBtn">📇 بطاقة دعوة للانضمام</button>' : '')
     + (isAdmin ? '<button id="announceBtn">📢 إعلان للجميع</button>' : '')
+    + (isAdmin ? '<button id="uncropPhotosBtn">🖼️ عرض الصور كاملة: '+(state.photosUncropped?'مفعّل':'غير مفعّل')+'</button>' : '')
     + (isAdmin && !TREE_ID ? '<button id="linkTreeBtn">ربط الشجرة الكبيرة '+(state.bigTreeKeyB64?'(مفعّل)':'(غير مفعّل)')+'</button>' : '')
     + (isAdmin ? '<button id="waListBtn">📱 رسالة جماعية واتساب</button>' : '')
     + (isAdmin ? '<button id="showMessagesBtn">📬 الرسائل الواردة'+(state.unreadMsgCount>0?' <span class="badge-count">'+state.unreadMsgCount+'</span>':'')+'</button>' : '')
@@ -2771,6 +2776,17 @@ function wireAppEvents(layout){
       state.busy = false; render();
     };
   }
+  const uncropPhotosBtn = document.getElementById("uncropPhotosBtn");
+  if (uncropPhotosBtn) uncropPhotosBtn.onclick = async () => {
+    const next = !state.photosUncropped;
+    state.photosUncropped = next;
+    state.menuOpen = false;
+    render();
+    try {
+      const meta = await loadMeta();
+      await saveMeta({...meta, photosUncropped: next});
+    } catch(_) { state.photosUncropped = !next; state.err = "تعذّر حفظ الإعداد."; render(); }
+  };
   const announceBtn = document.getElementById("announceBtn");
   if (announceBtn) announceBtn.onclick = () => { state.showAnnounceModal = true; state.err = ""; state.menuOpen = false; render(); };
   const announceOverlay = document.getElementById("announceOverlay");
