@@ -29,7 +29,9 @@ body{margin:0;font-family:'Tajawal',sans-serif;background:radial-gradient(ellips
 .ft-field{margin-bottom:14px;text-align:right;}
 .ft-field label{display:block;font-size:12.5px;color:var(--cream-dim);margin-bottom:5px;}
 .ft-field input,.ft-field select,.ft-field textarea{width:100%;background:var(--bg-2);border:1px solid rgba(201,161,90,0.3);border-radius:8px;padding:9px 11px;color:var(--cream);font-family:'Tajawal',sans-serif;font-size:14px;box-sizing:border-box;direction:rtl;unicode-bidi:plaintext;}
-.ft-field textarea{resize:vertical;min-height:60px;}
+.ft-field textarea{resize:vertical;min-height:60px;line-height:1.8;}
+#f_bio{min-height:220px;line-height:1.9;}
+@media (max-height:700px){#f_bio{min-height:160px;}}
 .ft-row2{display:flex;gap:10px;}
 .ft-row2>div{flex:1;}
 .ft-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--gold);color:#0B2B26;border:none;border-radius:999px;padding:9px 18px;font-family:'Tajawal',sans-serif;font-weight:700;font-size:14px;cursor:pointer;}
@@ -2289,7 +2291,7 @@ function renderEditModal(){
     + '<div class="ft-field"><label>سنة الوفاة (اختياري)</label><input id="f_death" value="'+esc(f.deathYear)+'"></div></div>'
     + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--cream-dim);margin:0 0 14px;text-align:right;justify-content:flex-end;">'
     + '<input type="checkbox" id="f_deceased" '+(f.deceased?'checked':'')+'> متوفى (حتى بدون تحديد سنة الوفاة)</label>'
-    + '<div class="ft-field"><label>نبذة</label><textarea id="f_bio" dir="rtl">'+esc(f.bio)+'</textarea></div>'
+    + '<div class="ft-field"><label>نبذة</label><textarea id="f_bio" dir="rtl" rows="9">'+esc(f.bio)+'</textarea></div>'
     + '<div class="ft-field"><label>الصور (يمكن إضافة أكثر من صورة)</label>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
     + f.photos.map((ph,i)=>'<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;"><img src="'+ph+'" style="width:60px;height:60px;border-radius:8px;object-fit:cover;object-position:center '+(f.photoPositions[i]||"center")+';border:1.5px solid rgba(201,161,90,0.4);">'
@@ -3361,6 +3363,16 @@ function wireAppEvents(layout){
       state._editForm.siblingPosition = null;
       render();
     };
+    const bioInput = document.getElementById("f_bio");
+    if (bioInput){
+      const growBio = () => {
+        bioInput.style.height = "auto";
+        const max = Math.round(window.innerHeight * 0.55);
+        bioInput.style.height = Math.min(Math.max(bioInput.scrollHeight + 2, 220), max) + "px";
+      };
+      bioInput.addEventListener("input", growBio);
+      growBio();
+    }
     const photoInput = document.getElementById("f_photo");
     if (photoInput) photoInput.onchange = async (e) => {
       const file = e.target.files[0]; if (!file) return;
