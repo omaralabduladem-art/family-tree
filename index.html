@@ -523,6 +523,11 @@ function arDigits(v){
     .replace(/[0-9]/g, d => String.fromCharCode(0x0660 + Number(d)))
     .replace(/[\u06F0-\u06F9]/g, d => String.fromCharCode(0x0660 + (d.charCodeAt(0)-0x06F0)));
 }
+function photoPosAt(p, i){
+  const arr = Array.isArray(p && p.photoPositions) ? p.photoPositions : null;
+  const v = arr && arr[i];
+  return (v === "top" || v === "bottom" || v === "center") ? v : ((p && p.photoPos) || "center");
+}
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function normalizeArabic(s){
   return (s||"")
@@ -1683,15 +1688,14 @@ function renderDetailModal(p, isEditor){
     if (parts.length > 1) nasabChain = parts.join(' ');
   }
   const photos = Array.isArray(p.photos) ? p.photos : (p.photo ? [p.photo] : []);
-  const photoPos = p.photoPos || "center";
   const mainIdx = Math.min(Math.max(state.detailPhotoIdx||0, 0), Math.max(photos.length-1, 0));
   let html = '<div class="overlay" id="detailOverlay"><div class="modal" onclick="event.stopPropagation()">'
   + '<button class="modal-close" id="closeDetailBtn">✕</button>'
-    + '<div class="detail-avatar"'+(photos[0]?' title="اضغط لعرض الصورة كاملة"':'')+'>'+(photos[mainIdx]?'<img src="'+photos[mainIdx]+'" style="object-position:'+photoPos+' center;">':'👤')+'</div>';
+    + '<div class="detail-avatar"'+(photos[0]?' title="اضغط لعرض الصورة كاملة"':'')+'>'+(photos[mainIdx]?'<img src="'+photos[mainIdx]+'" style="object-position:center '+photoPosAt(p, mainIdx)+';">':'👤')+'</div>';
   if (photos.length > 1){
     html += '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;">';
     photos.forEach((ph,i)=>{
-      html += '<img src="'+ph+'" class="gallery-thumb" data-idx="'+i+'" style="object-position:'+photoPos+' center;width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid '+(i===mainIdx?'var(--gold-light)':'rgba(201,161,90,0.4)')+';">';
+      html += '<img src="'+ph+'" class="gallery-thumb" data-idx="'+i+'" style="object-position:center '+photoPosAt(p, i)+';width:44px;height:44px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid '+(i===mainIdx?'var(--gold-light)':'rgba(201,161,90,0.4)')+';">';
     });
     html += '</div>';
   }
@@ -2245,8 +2249,12 @@ function renderEditModal(){
     birthYear: existing?.birthYear || "",
     deathYear: existing?.deathYear || "", bio: existing?.bio || "",
     deceased: existing?.deceased || false,
-    photoPos: existing?.photoPos || "center",
     photos: existing?.photos ? [...existing.photos] : (existing?.photo ? [existing.photo] : []),
+    photoPositions: (function(){
+      const ph = existing?.photos ? existing.photos : (existing?.photo ? [existing.photo] : []);
+      const src = Array.isArray(existing?.photoPositions) ? existing.photoPositions : [];
+      return ph.map((_,i) => src[i] || existing?.photoPos || "center");
+    })(),
     siblingPosition: null,
   };
   state._editForm = f;
@@ -2284,15 +2292,19 @@ function renderEditModal(){
     + '<div class="ft-field"><label>نبذة</label><textarea id="f_bio" dir="rtl">'+esc(f.bio)+'</textarea></div>'
     + '<div class="ft-field"><label>الصور (يمكن إضافة أكثر من صورة)</label>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
-    + f.photos.map((ph,i)=>'<div style="position:relative;"><img src="'+ph+'" style="width:60px;height:60px;border-radius:8px;object-fit:cover;border:1.5px solid rgba(201,161,90,0.4);">'
+    + f.photos.map((ph,i)=>'<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;"><img src="'+ph+'" style="width:60px;height:60px;border-radius:8px;object-fit:cover;object-position:center '+(f.photoPositions[i]||"center")+';border:1.5px solid rgba(201,161,90,0.4);">'
       + '<button class="remove-photo-btn" data-idx="'+i+'" style="position:absolute;top:-6px;left:-6px;width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;border:none;font-size:12px;cursor:pointer;">✕</button></div>').join('')
     + '</div>'
     + '<label class="photo-btn">📷 إضافة صورة<input type="file" accept="image/*" id="f_photo" style="display:none;"></label></div>'
-    + '<div class="ft-field"><label>موضع الوجه في الصورة الدائرية</label><select id="f_photoPos">'
-    + '<option value="center"'+(f.photoPos==="center"?' selected':'')+'>وسط الصورة (افتراضي)</option>'
-    + '<option value="top"'+(f.photoPos==="top"?' selected':'')+'>أعلى الصورة</option>'
-    + '<option value="bottom"'+(f.photoPos==="bottom"?' selected':'')+'>أسفل الصورة</option>'
-    + '</select></div>'
+    + (f.photos.length ? '<div class="ft-field"><label>موضع الوجه في كل صورة (عند القص الدائري)</label>'
+        + f.photos.map((ph,i)=>'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+          + '<img src="'+ph+'" style="width:34px;height:34px;border-radius:50%;object-fit:cover;object-position:center '+(f.photoPositions[i]||"center")+';border:1.5px solid rgba(201,161,90,0.4);flex-shrink:0;">'
+          + '<select class="photo-pos-select" data-idx="'+i+'" id="f_photoPos_'+i+'" style="flex:1;">'
+          + '<option value="center"'+((f.photoPositions[i]||"center")==="center"?' selected':'')+'>وسط الصورة</option>'
+          + '<option value="top"'+((f.photoPositions[i]||"center")==="top"?' selected':'')+'>أعلى الصورة</option>'
+          + '<option value="bottom"'+((f.photoPositions[i]||"center")==="bottom"?' selected':'')+'>أسفل الصورة</option>'
+          + '</select></div>').join('')
+        + '</div>' : '')
     + errBlock()
     + '<div class="modal-actions"><button class="ft-btn" id="saveEditBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?'جارٍ الحفظ...':'حفظ')+'</button><button class="ft-btn secondary" id="cancelEditBtn" '+(state.busy?'disabled':'')+'>إلغاء</button></div>'
     + '</div></div>';
@@ -3337,7 +3349,10 @@ function wireAppEvents(layout){
         deceased: document.getElementById("f_deceased") ? document.getElementById("f_deceased").checked : (state._editForm ? !!state._editForm.deceased : false),
         siblingPosition: document.getElementById("f_siblingPosition") ? document.getElementById("f_siblingPosition").value : (state._editForm ? state._editForm.siblingPosition : null),
         photos: state._editForm ? state._editForm.photos : [],
-        photoPos: document.getElementById("f_photoPos") ? document.getElementById("f_photoPos").value : (state._editForm ? state._editForm.photoPos : "center"),
+        photoPositions: (state._editForm ? state._editForm.photos : []).map((_,i) => {
+          const el = document.getElementById("f_photoPos_"+i);
+          return el ? el.value : ((state._editForm && state._editForm.photoPositions && state._editForm.photoPositions[i]) || "center");
+        }),
       };
     };
     const parentSelect = document.getElementById("f_parent");
@@ -3350,12 +3365,21 @@ function wireAppEvents(layout){
     if (photoInput) photoInput.onchange = async (e) => {
       const file = e.target.files[0]; if (!file) return;
       grab();
-      try { state._editForm.photos.push(await compressImage(file)); } catch(_) {}
+      try {
+        state._editForm.photos.push(await compressImage(file));
+        state._editForm.photoPositions.push("center");
+      } catch(_) {}
       render();
     };
+    document.querySelectorAll(".photo-pos-select").forEach(sel => sel.onchange = () => {
+      grab();
+      render();
+    });
     document.querySelectorAll(".remove-photo-btn").forEach(btn => btn.onclick = () => {
       grab();
-      state._editForm.photos.splice(parseInt(btn.dataset.idx), 1);
+      const ri = parseInt(btn.dataset.idx);
+      state._editForm.photos.splice(ri, 1);
+      state._editForm.photoPositions.splice(ri, 1);
       render();
     });
     document.getElementById("saveEditBtn").onclick = async () => {
@@ -3372,7 +3396,7 @@ function wireAppEvents(layout){
         birthYear: state._editForm.birthYear||"", deathYear: state._editForm.deathYear||"",
         deceased: !!(state._editForm.deceased || (state._editForm.deathYear && String(state._editForm.deathYear).trim())),
         bio: state._editForm.bio||"", photos: state._editForm.photos||[],
-        photoPos: state._editForm.photoPos || "center",
+        photoPositions: (state._editForm.photoPositions || []).slice(0, (state._editForm.photos||[]).length),
         featured: existing ? !!existing.featured : false,
         highlighted: existing ? !!existing.highlighted : false,
         createdAt: existing?.createdAt || Date.now(),
